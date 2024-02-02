@@ -1,4 +1,4 @@
-const baseUrl = "http://localhost:9090/"
+const baseUrl = "http://localhost:9090"
 // Upload
 document.getElementById('fetchButton').addEventListener('click', function() {
     const fileInput = document.getElementById('fileInput');
@@ -6,7 +6,7 @@ document.getElementById('fetchButton').addEventListener('click', function() {
         document.getElementById('loader').style.display = "block";
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
-        fetch(`${baseUrl}upload`, {
+        fetch(`${baseUrl}/upload`, {
             method: 'POST',
             body: formData,
             credentials: 'include'
@@ -33,7 +33,7 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
     const apiPath = this.value;
     if (apiPath) {
         document.getElementById('loader').style.display = "block";
-        fetch(basePath + apiPath, {
+        fetch(basePath + '/' + apiPath, {
             method: 'GET',
             credentials: 'include'
         })
