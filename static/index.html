@@ -34,11 +34,12 @@
                 <option value="duration_per_resource">Duration per resource</option>
                 <option value="resource_roles">Resource roles</option>
                 <option value="resource_role_duration">Resource role duration</option>
+                <option value="resource_within_role_norm">Resource within role</option>
                 <option value="roles_per_activity">Roles per activity</option>
                 <option value="resources_per_activity">Resources per activity</option>
                 <option value="activities_per_role">Activities per role</option>
                 <option value="activity_average_duration">Activity average duration</option>
-                <option value="activity_resource_cmparison">Activity resource comparison</option>
+                <option value="activity_resource_comparison">Activity resource comparison</option>
                 <option value="slowest_resource">Slowest resource</option>
             </select>
             <div id="resultContainer"></div>
@@ -47,6 +48,7 @@
     <div id="loader" style="display:none"></div>
     <link href="https://unpkg.com/tabulator-tables@5.5.4/dist/css/tabulator.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.5.4/dist/js/tabulator.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" charset="utf-8"></script>
     <script src="static/script.js"></script>
 </body>
 </html>

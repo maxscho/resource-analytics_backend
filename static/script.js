@@ -56,6 +56,9 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
             if (data.image) {
                 content += `<img src="data:image/jpeg;base64,${data.image}" style="max-width:100%; height:auto;">`;
             }
+            if (data.plot) {
+                content +=`<div id="plot"></div>`
+            }
             if (data.table) {
                 content += '<div id="resultTable"></div>'
             }
@@ -66,6 +69,11 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
             if (data.table) {
                 var table = new Tabulator("#resultTable", {data:data.table, autoColumns:true, layout:"fitColumns"});
             }
+            if (data.plot) {
+                figure = JSON.parse(data.plot)
+                Plotly.newPlot('plot', figure.data, figure.layout)
+            }
+
         })
         .catch(error => console.error('Error:', error));
     }

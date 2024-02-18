@@ -45,6 +45,7 @@ from pm import (
     resource_average_duration,
     resource_roles,
     resource_role_average_duration,
+    resource_within_role_normalization,
     roles_per_activity,
     resources_per_activity,
     activities_per_role,
@@ -149,6 +150,11 @@ async def read_units(session_id: str = Depends(get_session_id)):
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
     return resource_average_duration(df)
+
+@app.get("/resource_within_role_norm")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return resource_within_role_normalization(df)
 
 @app.get("/resource_roles")
 async def read_units(session_id: str = Depends(get_session_id)):
