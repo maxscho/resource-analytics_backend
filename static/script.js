@@ -2,11 +2,18 @@ const baseUrl = "http://localhost:9090"
 // Upload
 document.getElementById('fetchButton').addEventListener('click', function() {
     const fileInput = document.getElementById('fileInput');
-    if (fileInput.files.length > 0) {
+//    if (fileInput.files.length > 0) {
         document.getElementById('loader').style.display = "block";
         const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        fetch(`${baseUrl}/upload`, {
+        if (fileInput.files.length > 0) {
+            formData.append('file', fileInput.files[0]);
+            url = `${baseUrl}/upload`;
+        } else {
+            const emptyBlob = new Blob([], { type: 'text/plain' });
+            formData.append('file', emptyBlob,'empty.txt');
+            url = `${baseUrl}/fake_upload`
+        }
+        fetch(url, {
             method: 'POST',
             body: formData,
             credentials: 'include'
@@ -22,9 +29,9 @@ document.getElementById('fetchButton').addEventListener('click', function() {
             document.getElementById('loader').style.display = "none";
         })
         .catch(error => console.error('Error:', error));
-    } else {
-        console.log("No file selected.");
-    }
+//    } else {
+//        console.log("No file selected.");
+//    }
 });
 
 // Analysis
@@ -78,4 +85,11 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
         .catch(error => console.error('Error:', error));
     }
     document.getElementById('loader').style.display = "none";
+});
+document.addEventListener('DOMContentLoaded', (event) => {
+    // Ensure the element exists before clicking
+    const fetchButton = document.getElementById('fetchButton');
+    if (fetchButton) {
+        fetchButton.click(); // Simulate the click action
+    }
 });

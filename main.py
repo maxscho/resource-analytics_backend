@@ -1,9 +1,10 @@
-from fastapi import FastAPI, Query, Path, Body, Request, HTTPException, UploadFile, Cookie, Depends
+from fastapi import FastAPI, Query, Path, Body, Request, HTTPException, UploadFile, File, Cookie, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from typing import Annotated
+from typing import Annotated, Optional, Union
 from pydantic import BaseModel
 from enum import Enum
+import aiofiles
 
 import pandas as pd
 import pm4py
@@ -17,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 pd.set_option('display.max_columns', None)
 SESSION_DURATION = timedelta(hours=2)
 FILES_DIR = "files"
+TEST_FILE="hardcoded/PurchasingExample.csv"
 
 # Remove old uploads at init
 for filename in os.listdir(FILES_DIR):
@@ -34,6 +36,7 @@ app.add_middleware(
 
 async def get_session_id(session_id: str = Cookie(None)):
     return session_id
+    #return "fixed"
 
 sessions = {}
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -58,27 +61,16 @@ from pm import (
 async def get_index():
     return FileResponse("static/index.html")
 
-@app.post("/upload")
-async def upload(file: UploadFile):
-    session_id = str(uuid.uuid4())
-    expiration_date = datetime.now() + SESSION_DURATION
-
-    file_location = f"{FILES_DIR}/{session_id}.csv"
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
-
+def process_file(file_location: str):
     df = pd.read_csv(file_location)
     # Convert "Start Time" and "Complete Time" columns to datatype: datetime
     df["Start Timestamp"] = pd.to_datetime(df["Start Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
     df["Complete Timestamp"] = pd.to_datetime(df["Complete Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
     # Calculate the time difference and create a new column
     df["Duration"] = df["Complete Timestamp"] - df["Start Timestamp"]
-    sessions[session_id] = {
-        "file_location": file_location,
-        "dataframe": df,
-        "expiration": expiration_date
-    }
+    return df
 
+def describe_df(df):
     dff = df.drop(columns=["Duration"], inplace=False)
     dff = pm4py.format_dataframe(dff, case_id="Case ID", activity_key="Activity", timestamp_key="Complete Timestamp")
     event_log = pm4py.convert_to_event_log(dff)
@@ -96,6 +88,51 @@ async def upload(file: UploadFile):
         {"Metric":"Events", "Value":sum(len(case) for case in event_log)},
         {"Metric":"Timeframe", "Value":f"{min_start} - {max_end}"}
     ]
+    return (image_base64, metrics)
+
+@app.post("/upload")
+async def upload(file: UploadFile):
+    session_id = str(uuid.uuid4())
+    expiration_date = datetime.now() + SESSION_DURATION
+
+    if not file:
+        file = await aiofiles.open(TEST_FILE, mode='rb')
+
+    file_location = f"{FILES_DIR}/{session_id}.csv"
+    with open(file_location, "wb") as f:
+        f.write(await file.read())
+    if not isinstance(file, UploadFile):  #a fallback file
+        await file.close()
+    df = process_file(file_location)
+    sessions[session_id] = {
+        "file_location": file_location,
+        "dataframe": df,
+        "expiration": expiration_date
+    }
+    image_base64, metrics = describe_df(df)
+    response = JSONResponse(content={"image":image_base64, "table":metrics})
+    response.set_cookie(key="session_id", value=session_id)
+    return response
+
+@app.post("/fake_upload")
+async def fake_upload(file: Optional[UploadFile] = File(None)):
+    session_id = str(uuid.uuid4())
+    expiration_date = datetime.now() + SESSION_DURATION
+
+    file = await aiofiles.open(TEST_FILE, mode='rb')
+
+    file_location = f"{FILES_DIR}/{session_id}.csv"
+    with open(file_location, "wb") as f:
+        f.write(await file.read())
+    if not isinstance(file, UploadFile):  #a fallback file
+        await file.close()
+    df = process_file(file_location)
+    sessions[session_id] = {
+        "file_location": file_location,
+        "dataframe": df,
+        "expiration": expiration_date
+    }
+    image_base64, metrics = describe_df(df)
     response = JSONResponse(content={"image":image_base64, "table":metrics})
     response.set_cookie(key="session_id", value=session_id)
     return response
