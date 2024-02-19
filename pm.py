@@ -16,6 +16,7 @@ class OutputModel(BaseModel):
     image: str | None = None
     text: str | None = None
     plot: str | None = None
+    big_plot: str | None = None
 
 
 pd.set_option('display.max_columns', None)
@@ -304,7 +305,47 @@ def resource_within_role_normalization(df):
 
     plot = fig.to_json()
 
-    return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot)
+    # Get unique roles & convert average case duration in minutes
+    unique_roles = normalized_df['Role'].unique()
+
+    # Create subplots: one row for each role
+    fig = make_subplots(rows=len(unique_roles), cols=1, subplot_titles=[f'Role: {role}' for role in unique_roles])
+
+    for i, role in enumerate(unique_roles, 1):
+        # Filter the DataFrame for the current role
+        role_df = normalized_df[normalized_df['Role'] == role]
+        role_average_duration_minutes = (role_df['Average Case Duration'].dt.total_seconds()/ 60).round(2)
+        fig.add_trace(
+            go.Bar(
+                y=role_df['Resource'], 
+                x=role_average_duration_minutes,
+                marker=dict(color=BLUE),
+                hovertemplate='Average Case Duration: %{x} minutes<extra></extra>',
+                orientation='h'
+            ),
+            row=i, 
+            col=1
+        )
+
+    for i in range(1, len(unique_roles) + 1):
+        fig.update_yaxes(title_text="Resource", row=i, col=1)
+        fig.update_xaxes(title_text="Average Case Duration [min]", row=i, col=1)
+
+    fig.update_layout(
+        height=576 * len(unique_roles), 
+        #width=1200, 
+        title_text="Average Case Duration (in Minutes) per Role and Resource",
+        plot_bgcolor='white',
+        showlegend = False,
+        title={
+            'x':0.5,
+            'xanchor': 'center'
+        }
+    )
+
+    big_plot = fig.to_json()
+
+    return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot, big_plot=big_plot)
 
 
 def roles_per_activity(df, count: bool = True):
@@ -463,7 +504,45 @@ def activity_resource_comparison(df, normalize: bool = True):
         # TODO: optimize
         result_df = result_df.replace({np.nan: None})
 
-    return OutputModel(table=result_df.to_dict(orient="records"))
+    unique_activities = result_df['Activity'].unique()
+
+    fig = make_subplots(rows=len(unique_activities), cols=1, subplot_titles=[f'Activity: {activity}' for activity in unique_activities])
+
+    for i, activity in enumerate(unique_activities, 1):
+        activity_df = result_df[result_df['Activity'] == activity]
+        activity_average_duration_minutes = (activity_df['Average Case Duration'].dt.total_seconds()/60).round(2)
+        fig.add_trace(
+            go.Bar(
+                y=activity_df['Resource'], 
+                x=activity_average_duration_minutes,
+                marker=dict(color=BLUE),
+                hovertemplate='Average Case Duration: %{x} minutes<extra></extra>',
+                orientation='h'
+            ),
+            row=i,
+            col=1
+        )
+        max_duration = activity_average_duration_minutes.max() if not activity_average_duration_minutes.empty else 0
+        fig.update_xaxes(range=[0, max_duration + 1], row=i, col=1)
+
+    fig.update_layout(
+        height=576 * len(unique_activities), 
+        #width=1200,
+        title_text="Average Case Duration (in Minutes) per Activity and Resource",
+        showlegend=False,
+        plot_bgcolor='white',
+        title={
+            'x':0.5,
+            'xanchor': 'center'
+        }
+    )
+
+    fig.update_xaxes(title_text="Average Case Duration [min]")
+    fig.update_yaxes(title_text="Resource")
+
+    big_plot=fig.to_json()
+
+    return OutputModel(table=result_df.to_dict(orient="records"), big_plot=big_plot)
 
 def slowest_resource_per_activity(df):
     # Group by Activity and then Resource

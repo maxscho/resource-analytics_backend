@@ -61,6 +61,9 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
         .then(data => {
             let content = '';
             content += '<p> ⓘ Plots and tables are interactive, hover and click them for additional info.</p>'  //'&#9432;'
+            if (data.big_plot) {
+                content += `<p>Scroll down for additional plot.</p>`;
+            }
             if (data.image) {
                 content += `<img src="data:image/jpeg;base64,${data.image}" style="max-width:100%; height:auto;">`;
             }
@@ -73,6 +76,9 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
             if (data.text) {
                 content += `<p>${data.text}</p>`;
             }
+            if (data.big_plot) {
+                content += `<div id="big_plot"></div>`;
+            }
             document.getElementById('resultContainer').innerHTML = content;
             if (data.table) {
                 var table = new Tabulator("#resultTable", {data:data.table, autoColumns:true, layout:"fitColumns"});
@@ -81,11 +87,17 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
                 figure = JSON.parse(data.plot)
                 Plotly.newPlot('plot', figure.data, figure.layout)
             }
-
+            if (data.big_plot) {
+                big_figure = JSON.parse(data.big_plot)
+                Plotly.newPlot('big_plot', big_figure.data, big_figure.layout)
+            }
+            document.getElementById('loader').style.display = "none";
         })
-        .catch(error => console.error('Error:', error));
+        .catch(error => {
+            console.error('Error:', error);
+            document.getElementById('loader').style.display = "none";
+        });
     }
-    document.getElementById('loader').style.display = "none";
 });
 document.addEventListener('DOMContentLoaded', (event) => {
     // Ensure the element exists before clicking
