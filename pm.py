@@ -481,7 +481,7 @@ def activity_average_duration_with_roles(df):
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
 
 # TODO: activity_resource_comparison is the same just w/o norm?
-def activity_resource_comparison(df, normalize: bool = True):
+def activity_resource_comparison(df, normalize: bool = False):
     # Group by Activity and then Resource
     grouped_activities = df.groupby(['Activity', 'Resource'])
 
@@ -504,45 +504,115 @@ def activity_resource_comparison(df, normalize: bool = True):
         # TODO: optimize
         result_df = result_df.replace({np.nan: None})
 
-    unique_activities = result_df['Activity'].unique()
+    if not normalize:
+        unique_activities = result_df['Activity'].unique()
 
-    fig = make_subplots(rows=len(unique_activities), cols=1, subplot_titles=[f'Activity: {activity}' for activity in unique_activities])
+        fig = make_subplots(rows=len(unique_activities), cols=1, subplot_titles=[f'Activity: {activity}' for activity in unique_activities])
 
-    for i, activity in enumerate(unique_activities, 1):
-        activity_df = result_df[result_df['Activity'] == activity]
-        activity_average_duration_minutes = (activity_df['Average Case Duration'].dt.total_seconds()/60).round(2)
-        fig.add_trace(
-            go.Bar(
-                y=activity_df['Resource'], 
-                x=activity_average_duration_minutes,
-                marker=dict(color=BLUE),
-                hovertemplate='Average Case Duration: %{x} minutes<extra></extra>',
-                orientation='h'
-            ),
-            row=i,
-            col=1
+        for i, activity in enumerate(unique_activities, 1):
+            activity_df = result_df[result_df['Activity'] == activity]
+            activity_average_duration_minutes = (activity_df['Average Case Duration'].dt.total_seconds()/60).round(2)
+            fig.add_trace(
+                go.Bar(
+                    y=activity_df['Resource'], 
+                    x=activity_average_duration_minutes,
+                    marker=dict(color=BLUE),
+                    hovertemplate='Average Case Duration: %{x} minutes<extra></extra>',
+                    orientation='h'
+                ),
+                row=i,
+                col=1
+            )
+            max_duration = activity_average_duration_minutes.max() if not activity_average_duration_minutes.empty else 0
+            fig.update_xaxes(range=[0, max_duration + 1], row=i, col=1)
+
+        fig.update_layout(
+            height=576 * len(unique_activities), 
+            #width=1200,
+            title_text="Average Case Duration (in Minutes) per Activity and Resource",
+            showlegend=False,
+            plot_bgcolor='white',
+            title={
+                'x':0.5,
+                'xanchor': 'center'
+            }
         )
-        max_duration = activity_average_duration_minutes.max() if not activity_average_duration_minutes.empty else 0
-        fig.update_xaxes(range=[0, max_duration + 1], row=i, col=1)
 
-    fig.update_layout(
-        height=576 * len(unique_activities), 
-        #width=1200,
-        title_text="Average Case Duration (in Minutes) per Activity and Resource",
-        showlegend=False,
-        plot_bgcolor='white',
-        title={
-            'x':0.5,
-            'xanchor': 'center'
-        }
-    )
+        fig.update_xaxes(title_text="Average Case Duration [min]")
+        fig.update_yaxes(title_text="Resource")
 
-    fig.update_xaxes(title_text="Average Case Duration [min]")
-    fig.update_yaxes(title_text="Resource")
+        big_plot=fig.to_json()
 
-    big_plot=fig.to_json()
+        return OutputModel(table=result_df.to_dict(orient="records"), big_plot=big_plot)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), big_plot=big_plot)
+    if normalize:
+        normalized_data = result_df
+
+        # Convert 'Average Case Duration' from Timedelta to minutes
+        normalized_data['Average Case Duration'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
+
+        # Prepare the data for the heatmap
+        pivot_table = normalized_data.pivot(index='Activity', columns='Resource', values='Normalized Duration')
+
+        # Define the hover text to show both the average duration in minutes and the normalized value
+        hover_text = normalized_data.pivot(index='Activity', columns='Resource', values='Average Case Duration')
+        hover_text = hover_text.applymap(lambda x: f'Average Case Duration: {x:.2f} minutes' if pd.notnull(x) else '')
+
+        # Now create the heatmap using Plotly
+        fig = go.Figure(data=go.Heatmap(
+            z=pivot_table.values,
+            x=pivot_table.columns,
+            y=pivot_table.index,
+            hoverinfo='text',
+            text=hover_text.values,
+            colorscale=color_scale,
+            colorbar=dict(title='Average Case Duration (normalized)', tickvals=[0, 1], ticktext=['Fastest', 'Slowest'], titleside='right'),
+            showscale=True,
+            xgap=2,
+            ygap=2
+        ))
+
+        # Update the layout
+        fig.update_layout(
+            title=dict(text='Normalized Average Case Duration per Activity and Resource',x=0.5, xanchor='center'),
+            xaxis=dict(title='Resource'),
+            yaxis=dict(title='Activity'),
+            #width=1200,
+            #height=800,
+            plot_bgcolor='white'
+        )
+
+        plot = fig.to_json()
+
+        unique_activities_norm = normalized_data['Activity'].unique()
+        fig = go.Figure()
+
+        # Add a box trace for each activity
+        for activity in unique_activities_norm:
+            activity_df = normalized_data[normalized_data['Activity'] == activity]
+            fig.add_trace(go.Box(
+                x=activity_df['Normalized Duration'],
+                name=activity,
+                hoverinfo='none',  #disables hover information
+                marker_color=BLUE
+            ))
+
+        # Update the layout
+        fig.update_layout(
+            xaxis_title='Normalized Duration',
+            yaxis_title='Activity',
+            #width=1200,  # Width in pixels
+            #height=576,  # Height in pixels
+            plot_bgcolor='white',
+            showlegend=False,
+            title={
+                'text':'Boxplot of Normalized Duration for Resources within Each Activity',
+                'x':0.5,
+                'xanchor': 'center'
+            }
+        )
+        big_plot = fig.to_json()
+        return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, big_plot=big_plot)
 
 def slowest_resource_per_activity(df):
     # Group by Activity and then Resource
@@ -565,5 +635,31 @@ def slowest_resource_per_activity(df):
     result_df[['Slowest Resource', 'Average Case Duration']] = pd.DataFrame(result_df['Slowest Resource Info'].tolist(), index=result_df.index)
     result_df.drop('Slowest Resource Info', axis=1, inplace=True)
 
+    slowest = result_df.copy()
+    slowest['Average Case Duration'] = (slowest['Average Case Duration'].dt.total_seconds() / 60).round(2)
+
+    fig = px.bar(slowest, 
+        y='Activity', 
+        x='Average Case Duration', 
+        title='Slowest Resource per Activity',
+        labels={'Average Case Duration': 'Average Case Duration [min]'},
+        orientation='h',
+        color_discrete_sequence=[BLUE]
+        )
+
+    hover_template = "Slowest Resource: %{customdata}<br> Average Case Duration: %{x} minutes"
+
+    fig.update_traces(hovertemplate=hover_template,customdata=slowest['Slowest Resource'])
+
+    fig.update_layout(
+        plot_bgcolor='white',
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        title={
+            'x':0.5,
+            'xanchor': 'center'
+        }
+    )
+    plot = fig.to_json()
     #return result_df
-    return OutputModel(table=result_df.to_dict(orient="records"))
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
