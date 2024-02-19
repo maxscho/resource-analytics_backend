@@ -60,6 +60,7 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
         })
         .then(data => {
             let content = '';
+            content += '<p> ⓘ Plots and tables are interactive, hover and click them for additional info.</p>'  //'&#9432;'
             if (data.image) {
                 content += `<img src="data:image/jpeg;base64,${data.image}" style="max-width:100%; height:auto;">`;
             }
