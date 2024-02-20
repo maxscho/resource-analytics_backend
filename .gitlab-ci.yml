@@ -1,5 +1,6 @@
 stages:
   - build
+  - deploy
 
 build:
   stage: build
@@ -15,3 +16,19 @@ build:
       --destination "${CI_REGISTRY_IMAGE}"
       --cache
       --use-new-run
+
+deploy-resourceload:
+    stage: deploy
+    tags:
+        - k3s
+    image:
+        name: dtzar/helm-kubectl
+        entrypoint: [""]
+    script:
+        - kubectl config set-cluster manifesto --server="https://k8s1.ai.wu.ac.at:6443"
+        - kubectl config set clusters.manifesto.certificate-authority-data ${CERTIFICATE_AUTHORITY_DATA}
+        - kubectl config set-credentials resourceload --token=${USER_TOKEN}
+        - kubectl config set-context default --cluster=manifesto --user="resourceload" --namespace=resource-load
+        - kubectl config use-context default
+        - sed -i "s/<VERSION>/$CI_PIPELINE_ID/g" deployment.yaml
+        - kubectl apply -f deployment.yaml
