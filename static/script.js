@@ -97,6 +97,8 @@ document.getElementById('analysisDropdown').addEventListener('change', function(
             console.error('Error:', error);
             document.getElementById('loader').style.display = "none";
         });
+    } else {
+        document.getElementById('resultContainer').innerHTML = "";
     }
 });
 document.addEventListener('DOMContentLoaded', (event) => {

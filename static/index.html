@@ -29,18 +29,19 @@
             <p>Select the analysis</p>
             <select id="analysisDropdown" disabled>
                 <option value="">No Analysis</option>
-                <option value="units">Units</option>
+                <option value="units">Unique Resources</option>
                 <option value="duration_per_role">Duration per role</option>
-                <option value="duration_per_resource">Duration per resource</option>
-                <option value="resource_roles">Resource roles</option>
-                <option value="resource_role_duration">Resource role duration</option>
-                <option value="resource_within_role_norm">Resource within role</option>
-                <option value="roles_per_activity">Roles per activity</option>
+                <option value="resource_roles">Roles per Resource</option>
+                <option value="resource_within_role_norm">Duration per Role and Resource</option>
                 <option value="resources_per_activity">Resources per activity</option>
                 <option value="activities_per_role">Activities per role</option>
-                <option value="activity_average_duration">Activity average duration</option>
-                <option value="activity_resource_comparison">Activity resource comparison</option>
-                <option value="activity_resource_comparison_norm">Activity resource comparison normalized</option>
+                <option value="activity_average_duration">Duration per Activity and Role (Heatmap)</option>
+                <option value="activity_resource_comparison">Duration per Activity and Resource</option>
+                <option value="activity_resource_comparison_norm">Duration per Activity and Resource (Heatmap)</option>
+                <option value="" disabled>---Additional analyses---</option>
+                <option value="duration_per_resource">Duration per resource</option>
+                <option value="resource_role_duration">Resource role duration</option>
+                <option value="roles_per_activity">Roles per activity</option>
                 <option value="slowest_resource">Slowest resource</option>
             </select>
             <div id="resultContainer"></div>
