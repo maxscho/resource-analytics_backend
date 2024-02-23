@@ -66,7 +66,7 @@ def units_per_role(df):
     fig.update_xaxes(title_text='Number of Resources')
     fig.update_layout(
         #width=1200,  # Width in pixels
-        #height=576,  # Height in pixels
+        height=576,  # Height in pixels
         plot_bgcolor='white',  
         title={
             'y':0.9,
@@ -136,7 +136,7 @@ def role_average_duration(df, normalize: bool = False):
     fig.update_layout(
         plot_bgcolor='white',
         #width=1200,  # Width in pixels
-        #height=576,  # Height in pixels
+        height=576,  # Height in pixels
         title={
             'x':0.5,
             'xanchor': 'center'
@@ -204,7 +204,7 @@ def resource_roles(df):
     fig.update_layout(
         plot_bgcolor='white',
         #width=1200,  # Width in pixels
-        #height=800,  # Height in pixels
+        height=800,  # Height in pixels
         title={
             'x': 0.5,
             'xanchor': 'center'
@@ -295,7 +295,7 @@ def resource_within_role_normalization(df):
 
     fig.update_layout(
         #width=1200,  # Width in pixels
-        #height=576,  # Height in pixels
+        height=576,  # Height in pixels
         plot_bgcolor='white',
         title={
             'x':0.5,
@@ -373,7 +373,7 @@ def resources_per_activity(df, count: bool = True):
     fig.update_xaxes(title_text='Number of Resources')
     fig.update_layout(
         #width=1200,  # Width in pixels
-        #height=576,  # Height in pixels
+        height=576,  # Height in pixels
         plot_bgcolor='white',  
         title={
             'x':0.5,
@@ -399,7 +399,7 @@ def activities_per_role(df):
     fig.update_traces(hovertemplate='Activities: <br>%{customdata}', customdata=activities_per_role_sorted['Hover Text'])
     fig.update_layout(
         #width=1200,  # Width in pixels
-        #height=576,  # Height in pixels
+        height=576,  # Height in pixels
         plot_bgcolor='white',  
         title={
             'y':0.9,
@@ -473,7 +473,7 @@ def activity_average_duration_with_roles(df):
         xaxis=dict(title='Role'),
         yaxis=dict(title='Activity'),
         #width=1200,
-        #height=576,
+        height=576,
         plot_bgcolor='white'
     )
     plot = fig.to_json()
@@ -578,7 +578,7 @@ def activity_resource_comparison(df, normalize: bool = False):
             xaxis=dict(title='Resource'),
             yaxis=dict(title='Activity'),
             #width=1200,
-            #height=800,
+            height=800,
             plot_bgcolor='white'
         )
 
@@ -602,7 +602,7 @@ def activity_resource_comparison(df, normalize: bool = False):
             xaxis_title='Normalized Duration',
             yaxis_title='Activity',
             #width=1200,  # Width in pixels
-            #height=576,  # Height in pixels
+            height=576,  # Height in pixels
             plot_bgcolor='white',
             showlegend=False,
             title={
