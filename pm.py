@@ -119,12 +119,13 @@ def role_average_duration(df, normalize: bool = False):
     if normalize:
         result_df['Normalized Duration'] = (result_df['Average Case Duration'] - result_df['Average Case Duration'].min()) / (result_df['Average Case Duration'].max() - result_df['Average Case Duration'].min())
 
-    minutes = result_df.copy()
+    #minutes = result_df.copy()
     # Convert 'Average Case Duration' from timedelta64[ns] to minutes
-    minutes['Average Case Duration (Minutes)'] = minutes['Average Case Duration'].dt.total_seconds() / 60
-    minutes['Average Case Duration (Minutes)'] = minutes['Average Case Duration (Minutes)'].round(2)
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+    result_df.drop('Average Case Duration', axis=1, inplace=True)
 
-    fig = px.bar(minutes, y='Role', x='Average Case Duration (Minutes)',
+    fig = px.bar(result_df, y='Role', x='Average Case Duration (Minutes)',
         title='Average Case Duration per Role (in Minutes)',
         labels={'Average Case Duration (Minutes)': 'Average Case Duration [min]', 'Role': 'Role'},
         orientation='h',
@@ -168,6 +169,9 @@ def resource_average_duration(df):
         "Resource": unique_resources,
         "Average Case Duration": average_duration_per_case
     })
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+    result_df.drop('Average Case Duration', axis=1, inplace=True)
 
     return OutputModel(table=result_df.to_dict(orient="records"))
 
@@ -248,6 +252,10 @@ def resource_role_average_duration(df, time_unit: str ='minutes', normalize: boo
     if normalize:
         result_df['Normalized Duration'] = (result_df['Average Case Duration'] - result_df['Average Case Duration'].min()) / (result_df['Average Case Duration'].max() - result_df['Average Case Duration'].min())
 
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+    result_df.drop('Average Case Duration', axis=1, inplace=True)
+
     return OutputModel(table=result_df.to_dict(orient="records"))
 
 #TODO
@@ -285,6 +293,7 @@ def resource_within_role_normalization(df):
 
         # Append this role's DataFrame to the list
         normalized_role_dfs.append(role_result_df)
+
     # Concatenate all the role DataFrames
     normalized_df = pd.concat(normalized_role_dfs, ignore_index=True)
 
@@ -344,6 +353,10 @@ def resource_within_role_normalization(df):
     )
 
     big_plot = fig.to_json()
+
+    normalized_df['Average Case Duration (Minutes)'] = normalized_df['Average Case Duration'].dt.total_seconds() / 60
+    normalized_df['Average Case Duration (Minutes)'] = normalized_df['Average Case Duration (Minutes)'].round(2)
+    normalized_df.drop('Average Case Duration', axis=1, inplace=True)
 
     return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot, big_plot=big_plot)
 
@@ -438,12 +451,14 @@ def activity_average_duration_with_roles(df):
         "Average Case Duration": average_duration_per_case
     })
 
-    heatmap_roles = result_df
+    heatmap_roles = result_df.copy()
     heatmap_roles['Average Case Duration'] = (heatmap_roles['Average Case Duration'].dt.total_seconds()/60).round(2)
     heatmap_roles['Normalized Duration'] = heatmap_roles.groupby('Role')['Average Case Duration'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
 
     all_roles = heatmap_roles['Role'].unique()
     all_activities = heatmap_roles['Activity'].unique()
+
+
 
     # Create pivot table
     table = heatmap_roles.pivot_table(index='Activity', columns='Role', values='Normalized Duration', aggfunc='mean', dropna=False)
@@ -477,6 +492,11 @@ def activity_average_duration_with_roles(df):
         plot_bgcolor='white'
     )
     plot = fig.to_json()
+
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+    result_df.drop('Average Case Duration', axis=1, inplace=True)
+    result_df['Normalized Duration'] = result_df.groupby('Role')['Average Case Duration (Minutes)'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
 
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
 
@@ -543,19 +563,24 @@ def activity_resource_comparison(df, normalize: bool = False):
 
         big_plot=fig.to_json()
 
+        result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+        result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+        result_df.drop('Average Case Duration', axis=1, inplace=True)
+
         return OutputModel(table=result_df.to_dict(orient="records"), big_plot=big_plot)
 
     if normalize:
-        normalized_data = result_df
+        normalized_data = result_df.copy()
 
         # Convert 'Average Case Duration' from Timedelta to minutes
-        normalized_data['Average Case Duration'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
+        normalized_data['Average Case Duration (Minutes)'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
+        normalized_data.drop('Average Case Duration', axis=1, inplace=True)
 
         # Prepare the data for the heatmap
         pivot_table = normalized_data.pivot(index='Activity', columns='Resource', values='Normalized Duration')
 
         # Define the hover text to show both the average duration in minutes and the normalized value
-        hover_text = normalized_data.pivot(index='Activity', columns='Resource', values='Average Case Duration')
+        hover_text = normalized_data.pivot(index='Activity', columns='Resource', values='Average Case Duration (Minutes)')
         hover_text = hover_text.applymap(lambda x: f'Average Case Duration: {x:.2f} minutes' if pd.notnull(x) else '')
 
         # Now create the heatmap using Plotly
@@ -612,7 +637,7 @@ def activity_resource_comparison(df, normalize: bool = False):
             }
         )
         big_plot = fig.to_json()
-        return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, big_plot=big_plot)
+        return OutputModel(table=normalized_data.to_dict(orient="records"), plot=plot, big_plot=big_plot)
 
 def slowest_resource_per_activity(df):
     # Group by Activity and then Resource
@@ -635,12 +660,17 @@ def slowest_resource_per_activity(df):
     result_df[['Slowest Resource', 'Average Case Duration']] = pd.DataFrame(result_df['Slowest Resource Info'].tolist(), index=result_df.index)
     result_df.drop('Slowest Resource Info', axis=1, inplace=True)
 
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration'].dt.total_seconds() / 60
+    result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
+    result_df.drop('Average Case Duration', axis=1, inplace=True)
+
+
     slowest = result_df.copy()
-    slowest['Average Case Duration'] = (slowest['Average Case Duration'].dt.total_seconds() / 60).round(2)
+    #slowest['Average Case Duration'] = (slowest['Average Case Duration'].dt.total_seconds() / 60).round(2)
 
     fig = px.bar(slowest, 
         y='Activity', 
-        x='Average Case Duration', 
+        x='Average Case Duration (Minutes)', 
         title='Slowest Resource per Activity',
         labels={'Average Case Duration': 'Average Case Duration [min]'},
         orientation='h',
