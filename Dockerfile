@@ -5,5 +5,5 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY . .
 RUN mkdir files
-ENV API_URL=http://localhost:9099
+ENV API_URL=http://localhost:9090
 CMD ["./run.sh"]
