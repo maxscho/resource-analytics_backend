@@ -4,12 +4,15 @@ import numpy as np
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+import seaborn as sns
+
+import pm4py
+from colorize import colorize_net, get_colors
 
 import base64
 from io import BytesIO
 
 from pydantic import BaseModel
-
 
 class OutputModel(BaseModel):
     table: list[dict]
@@ -17,6 +20,7 @@ class OutputModel(BaseModel):
     text: str | None = None
     plot: str | None = None
     big_plot: str | None = None
+    process_model: str | None = None
 
 
 pd.set_option('display.max_columns', None)
@@ -98,7 +102,6 @@ def role_average_duration(df, normalize: bool = False):
     # Initialize lists to store data for each role
     unique_roles = []
     average_duration_per_case = []
-
     # Iterate through groups
     for role, role_df in grouped_roles:
         # Calculate and append the average duration per case for this role
@@ -145,8 +148,9 @@ def role_average_duration(df, normalize: bool = False):
     )
 
     plot = fig.to_json()
+    process_model = activity_case_duration(df).process_model
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
 
 def resource_average_duration(df):
     # TODO: highlight max value (in js)
@@ -358,7 +362,9 @@ def resource_within_role_normalization(df):
     normalized_df['Average Case Duration (Minutes)'] = normalized_df['Average Case Duration (Minutes)'].round(2)
     normalized_df.drop('Average Case Duration', axis=1, inplace=True)
 
-    return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot, big_plot=big_plot)
+    process_model = activity_case_duration(df).process_model
+
+    return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot, big_plot=big_plot, process_model=process_model)
 
 
 def roles_per_activity(df, count: bool = True):
@@ -693,3 +699,484 @@ def slowest_resource_per_activity(df):
     plot = fig.to_json()
     #return result_df
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
+
+#### Extension ####
+def get_timeframe(df):
+    return (df['Start Timestamp'].min(), df['Complete Timestamp'].max())
+
+def calculate_working_days(start_date, end_date):
+    # Calculate the number of working days (excluding weekends) between start and end date
+    all_days = pd.date_range(start=start_date, end=end_date, freq='B')  # 'B' represents business days (Mon-Fri)
+    return len(all_days)
+
+# Resource capacity
+def total_duration_per_activity_and_resource(df):
+    # Group by Activity and Resource and sum durations to get the total time spent on each activity by each resource
+    result_df = df.groupby(['Activity', 'Resource'])['Duration'].sum().reset_index()
+
+    # Rename columns for better readability
+    result_df=result_df.rename(columns={'Duration': 'Total Time Spent'})
+
+    return result_df
+
+def total_duration_per_resource_and_activity(df):
+    # Group by Resource and Activity, sum durations to get the total time spent on each activity by each resource
+    result_df = df.groupby(['Resource', 'Activity'])['Duration'].sum().reset_index()
+
+    # Rename columns for better readability
+    result_df=result_df.rename(columns={'Duration': 'Total Time Spent'})
+
+    # Add a new column for the overall time spent in minutes
+    result_df['Total Time Spent (min)'] = (result_df['Total Time Spent'].dt.total_seconds() / 60).round(2)  # Convert to minutes
+
+    # Calculate the total time spent per resource on all activities
+    total_time_per_resource = result_df.groupby('Resource')['Total Time Spent'].sum().reset_index()
+    total_time_per_resource = total_time_per_resource.rename(columns={'Total Time Spent': 'Overall Time Spent'})
+
+    # Merge the total time spent per resource into the result dataframe
+    result_df = result_df.merge(total_time_per_resource, on='Resource')
+
+    # Calculate the percentage of time spent on each activity
+    result_df['Percentage Time Spent (%)'] = (result_df['Total Time Spent'] / result_df['Overall Time Spent'] * 100).round(2)
+
+    # Drop the 'Overall Time Spent' column to hide it
+    result_df = result_df.drop(columns=['Overall Time Spent'])
+
+    #return result_df
+    resource_time_distribution_plot = result_df.copy()
+    unique_activities = resource_time_distribution_plot['Activity'].unique()
+    color_palette = sns.color_palette("husl", len(unique_activities)).as_hex()
+
+    # dictionary for dfg color coding
+    activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
+
+    fig = px.bar(
+        resource_time_distribution_plot,
+        x='Percentage Time Spent (%)',
+        y='Resource',
+        color='Activity',
+        orientation='h', 
+        title='Percentage of Time Spent on Each Activity by Resource',
+        labels={'Percentage Time Spent (%)': 'Percentage of Total Time Spent'},
+        barmode='stack',
+        custom_data=['Activity', 'Percentage Time Spent (%)'], 
+        color_discrete_sequence=color_palette 
+    )
+
+    # Custom hover text
+    fig.update_traces(
+        hovertemplate='Activity: %{customdata[0]}<br>Relative duration: %{customdata[1]}%' +
+            '<extra></extra>'  # Remove extra information
+    )
+
+    fig.update_layout(
+        plot_bgcolor='white',
+        #showlegend=False,
+        #width=1200,  
+        height=800,  
+        xaxis=dict(dtick=10,title=dict(standoff=35)),
+        #yaxis=dict(pad=10),
+        bargap=0.3,
+        margin = {'pad': 15},
+        title={
+            'y':0.92,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        legend=dict(
+            orientation="h",
+            y=-0.2,
+            xanchor='center',  
+            x=0.45  
+        )
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+
+    #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
+    process_model = colorize_net(heu_net, activity_color_mapping)
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+
+def total_duration_per_resource(df):
+    # Group by Resource and sum all durations to get the overall time spent by each resource
+    result_df = df.groupby('Resource')['Duration'].sum().reset_index()
+
+    # Rename the columns for better readability
+    result_df = result_df.rename(columns={'Duration': 'Overall Time Spent'})
+
+    # Add a new column for the overall time spent in hours, assuming 'Total Time Spent' is in minutes
+    result_df['Overall Time Spent (Hours)'] = (result_df['Overall Time Spent'].dt.total_seconds()/3600).round(2)  # Convert minutes to hours
+
+    return result_df
+
+def capacity_utilization_resource(df, work_hours_per_day=7.7):
+    start_date, end_date = get_timeframe(df)
+    # get the overall time spent for each resource
+    result_df = total_duration_per_resource(df)
+
+    # Calculate the total available working hours during the event log period
+    working_days = calculate_working_days(start_date, end_date)
+    available_working_hours = working_days * work_hours_per_day
+
+    # Calculate the capacity utilization for each resource
+    result_df['Capacity Utilization (%)'] = (result_df['Overall Time Spent (Hours)'] / available_working_hours * 100).round(2)
+
+    #return result_df
+    capacity_utilization_resource_plot = result_df.copy()
+
+    fig = px.bar(capacity_utilization_resource_plot, x='Capacity Utilization (%)', y='Resource',
+        title='Capacity Utilization per Resource',
+        labels={'Resource': 'Resource', 'Capacity Utilization (%)': 'Capacity Utilization (%)'},
+        color_discrete_sequence=['#2066a8'],
+        orientation="h")
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.add_shape(
+        type="line",
+        x0=100, x1=100,  # Vertical line at 100% on the x-axis
+        y0=0, y1=1,      # Full height of the plot
+        xref='x', yref='paper',  # x in data coordinates, y in paper (0 to 1) coordinates
+        line=dict(color="red", width=2) #, dash="dash")  # Customizing the line style
+    )
+
+    fig.update_layout(
+       # width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+    process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+# Role capacity
+# Naive
+def total_duration_per_role(df):
+    grouped_roles = df.groupby('Role')
+
+    roles = []
+    nr_resources = []
+    overall_time_spent = []
+
+    for role, role_df in grouped_roles:
+        roles.append(role)
+        nr_resources.append(role_df['Resource'].nunique())
+        overall_time_spent.append(role_df['Duration'].sum())
+
+    # Create a new df
+    result_df = pd.DataFrame({
+        'Role': roles,
+        'Number of Resources': nr_resources,
+        'Overall Time Spent': overall_time_spent
+    })
+
+    result_df['Overall Time Spent (Hours)'] = (result_df['Overall Time Spent'].dt.total_seconds()/3600).round(2)  # Convert minutes to hours
+
+    return result_df
+
+def total_duration_per_role_and_activity(df):
+    
+    # Group by Role and Activity, sum durations to get the total time spent on each activity by each role
+    result_df = df.groupby(['Role', 'Activity'])['Duration'].sum().reset_index()
+
+    # Rename columns for better readability
+    result_df = result_df.rename(columns={'Duration': 'Total Time Spent'})
+
+    # Add a new column for the overall time spent in minutes
+    result_df['Total Time Spent (min)'] = (result_df['Total Time Spent'].dt.total_seconds() / 60).round(2)  # Convert to minutes
+
+    # Calculate the total time spent per resource on all activities
+    total_time_per_role = result_df.groupby('Role')['Total Time Spent'].sum().reset_index()
+    total_time_per_role = total_time_per_role.rename(columns={'Total Time Spent': 'Overall Time Spent'})
+
+    # Merge the total time spent per resource into the result dataframe
+    result_df = result_df.merge(total_time_per_role, on='Role')
+
+    # Calculate the percentage of time spent on each activity
+    result_df['Percentage Time Spent (%)'] = (result_df['Total Time Spent'] / result_df['Overall Time Spent'] * 100).round(2)
+
+    # Drop the 'Overall Time Spent' column to hide it
+    result_df = result_df.drop(columns=['Overall Time Spent'])
+
+    #return result_df
+    role_time_distribution_plot = result_df.copy()
+    unique_activities = role_time_distribution_plot['Activity'].unique()
+    color_palette = sns.color_palette("husl", len(unique_activities)).as_hex()
+
+    # dictionary for dfg color coding
+    activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
+
+    fig = px.bar(
+        role_time_distribution_plot,
+        x='Percentage Time Spent (%)',
+        y='Role',
+        color='Activity',
+        orientation='h', 
+        title='Percentage of Time Spent on Each Activity by Role',
+        labels={'Percentage Time Spent (%)': 'Percentage of Total Time Spent'},
+        barmode='stack',
+        custom_data=['Activity', 'Percentage Time Spent (%)'], 
+        color_discrete_sequence=color_palette 
+    )
+
+    # Custom hover text
+    fig.update_traces(
+        hovertemplate='Activity: %{customdata[0]}<br>Relative duration: %{customdata[1]}%' +
+            '<extra></extra>'  # Remove extra information
+    )
+
+    fig.update_layout(
+        plot_bgcolor='white',
+        #showlegend=False,
+        #width=1200,  
+        height=800,  
+        xaxis=dict(dtick=10,title=dict(standoff=35)),
+        #yaxis=dict(pad=10),
+        bargap=0.5,
+        margin = {'pad': 15},
+        title={
+            'y':0.92,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        legend=dict(
+            orientation="h",
+            y=-0.2,
+            xanchor='center',  
+            x=0.45  
+        )
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+
+    #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
+    process_model = colorize_net(heu_net, activity_color_mapping)
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+def capacity_utilization_role(df, work_hours_per_day=7.7):
+    start_date, end_date = get_timeframe(df)
+
+    # get the overall time spent for each role
+    result_df = total_duration_per_role(df)
+
+    # Calculate the total available working hours during the event log period
+    working_days = calculate_working_days(start_date, end_date)
+    available_working_hours = working_days * work_hours_per_day
+
+    # Calculate the capacity utilization for each role
+    result_df['Capacity Utilization (%)'] = (result_df['Overall Time Spent (Hours)'] / (result_df['Number of Resources'] * available_working_hours) * 100).round(2)
+
+    #return result_df
+    capacity_utilization_role_plot = result_df.copy()
+
+    fig = px.bar(capacity_utilization_role_plot, x='Capacity Utilization (%)', y='Role',
+        title='Capacity Utilization per Role',
+        labels={'Role': 'Role', 'Capacity Utilization (%)': 'Capacity Utilization (%)'},
+        color_discrete_sequence=['#2066a8'],
+        orientation="h")
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.add_shape(
+        type="line",
+        x0=100, x1=100,  # Vertical line at 100% on the x-axis
+        y0=0, y1=1,      # Full height of the plot
+        xref='x', yref='paper',  # x in data coordinates, y in paper (0 to 1) coordinates
+        line=dict(color="red", width=2) #, dash="dash")  # Customizing the line style
+    )
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+    process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+# Activity capacity
+# Naive
+def total_duration_per_activity(df):
+    grouped_activities = df.groupby('Activity')
+
+    activities = []
+    nr_resources = []
+    overall_time_spent = []
+
+    for activity, activity_df in grouped_activities:
+        activities.append(activity)
+        nr_resources.append(activity_df['Resource'].nunique())
+        overall_time_spent.append(activity_df['Duration'].sum())
+
+    # Create a new df
+    result_df = pd.DataFrame({
+        'Activity': activities,
+        'Number of Resources': nr_resources,
+        'Overall Time Spent': overall_time_spent
+    })
+
+    result_df['Overall Time Spent (Hours)'] = (result_df['Overall Time Spent'].dt.total_seconds()/3600).round(2)  # Convert minutes to hours
+
+
+    return result_df
+
+def capacity_utilization_activity(df, work_hours_per_day=7.7):
+    start_date, end_date = get_timeframe(df)
+
+    # get the overall time spent for each activity
+    result_df = total_duration_per_activity(df)
+
+    # Calculate the total available working hours during the event log period
+    working_days = calculate_working_days(start_date, end_date)
+    available_working_hours = working_days * work_hours_per_day
+
+    # Calculate the capacity utilization for each activity
+    result_df['Capacity Utilization (%)'] = (result_df['Overall Time Spent (Hours)'] / (result_df['Number of Resources'] * available_working_hours) * 100).round(2)
+
+    #return result_df
+    capacity_utilization_activity_plot = result_df.copy()
+    fig = px.bar(capacity_utilization_activity_plot, x='Capacity Utilization (%)', y='Activity',
+             title='Capacity Utilization per Activity',
+             labels={'Role': 'Role', 'Capacity Utilization (%)': 'Capacity Utilization (%)'},
+             color_discrete_sequence=['#2066a8'],
+             orientation="h")
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.add_shape(
+        type="line",
+        x0=100, x1=100,  # Vertical line at 100% on the x-axis
+        y0=0, y1=1,      # Full height of the plot
+        xref='x', yref='paper',  # x in data coordinates, y in paper (0 to 1) coordinates
+        line=dict(color="red", width=2) #, dash="dash")  # Customizing the line style
+    )
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+    #graph = pm4py.visualization.heuristics_net.visualizer.get_graph(heu_net)
+    #graph = assign_colors(graph, colors = {k:f"#FF0000;{random():.2f}:#FFFFFF" for k in heu_net.activities})
+
+    colors = get_colors(dict(zip(result_df['Activity'], result_df['Capacity Utilization (%)'] / 100)))
+    #print(colors)
+    #png_image = graph.create_png()
+    #process_model = base64.b64encode(png_image).decode('utf-8')
+    process_model = colorize_net(heu_net, colors)
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+
+def activity_case_duration(df):
+    # Group by Activity
+    grouped_activities = df.groupby('Activity')
+
+    unique_activities = []
+    average_duration_per_case = []
+    median_duration_per_case = []
+
+    # Iterate through groups
+    for activity, activity_df in grouped_activities:
+        # Calculate total duration per case
+        case_durations = activity_df.groupby('Case ID')['Duration'].sum()
+
+        # Calculate and append avg/median case duration
+        average_duration = case_durations.mean()
+        median_duration = case_durations.median()
+
+        unique_activities.append(activity)
+        average_duration_per_case.append(average_duration)
+        median_duration_per_case.append(median_duration)
+
+    # Create resulting df
+    result_df = pd.DataFrame({
+        "Activity": unique_activities,
+        "Average Case Duration": average_duration_per_case,
+        "Median Case Duration": median_duration_per_case
+    })
+    
+    ## Perform min-max normalization using lambda functions on both Average and Median Case Duration
+    result_df['Normalized Average Case Duration'] = result_df['Average Case Duration'].apply(
+        lambda x: (x - result_df['Average Case Duration'].min()) / (result_df['Average Case Duration'].max() - result_df['Average Case Duration'].min()))
+        
+    result_df['Normalized Median Case Duration'] = result_df['Median Case Duration'].apply(
+        lambda x: (x - result_df['Median Case Duration'].min()) / (result_df['Median Case Duration'].max() - result_df['Median Case Duration'].min()))
+
+    #return result_df
+
+    acd_activity = result_df.copy()
+
+    # Convert ACD from timedelta64[ns] to minutes
+    acd_activity['Average Case Duration (Minutes)'] = (acd_activity['Average Case Duration'].dt.total_seconds()/ 60).round(2)
+
+    fig = px.bar(acd_activity, y='Activity', x='Average Case Duration (Minutes)',
+        title='Average Case Duration per Activity (in Minutes)',
+        #labels={'Average Case Duration (Minutes)': 'Average Case Duration [min]', 'Activity': 'Activity'},
+        orientation='h',
+        color_discrete_sequence=['#2066a8'])
+
+    # Custom hover text 
+    fig.update_traces(hovertemplate='Average Case Duration: %{x:,.2f} minutes')
+
+    fig.update_layout(
+        plot_bgcolor='white',
+        #width=1200,  
+        height=576,  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+    #graph = pm4py.visualization.heuristics_net.visualizer.get_graph(heu_net)
+    #graph = assign_colors(graph, colors = {k:f"#FF0000;{random():.2f}:#FFFFFF" for k in heu_net.activities})
+
+    colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
+    #print(colors)
+    #png_image = graph.create_png()
+    #process_model = base64.b64encode(png_image).decode('utf-8')
+    process_model = colorize_net(heu_net, colors)
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)

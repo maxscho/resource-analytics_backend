@@ -12,38 +12,58 @@
     </header>
     <div class="container">
         <div class="left-panel">
-            <div id="div1">
+            <div id="div1" class="rounded">
                 <p>Upload an event log</p>
                 <input type="file" id="fileInput" disabled>
                 <button id="fetchButton">Upload</button>
             </div>
-            <div id="div2">
-                <img id="base64Image" style="max-width:100%; height: auto;" />
+            <div id="div2" class="rounded">
+                <img id="base64Image" style="max-width:100%; height: 100%; transition: transform 0.2s ease;" />
             </div>
-            <div id="div3">
+            <div id="div3" class="rounded">
                 <div id="dataTable"></div>
             </div>
         </div>
-        <div id="div4">
+        <div id="div4" class="rounded">
             <!-- Content for div 4 goes here -->
+<!--        <div id="controls-container">-->
+<!--            <div>-->
             <p>Select the analysis</p>
-            <select id="analysisDropdown" disabled>
+            <select id="analysisDropdown" class="custom-select" disabled>
                 <option value="">No Analysis</option>
                 <option value="units">Unique Resources</option>
-                <option value="duration_per_role">Duration per role</option>
+                <option value="duration_per_role">Duration per Role</option>
                 <option value="resource_roles">Roles per Resource</option>
                 <option value="resource_within_role_norm">Duration per Role and Resource</option>
-                <option value="resources_per_activity">Resources per activity</option>
-                <option value="activities_per_role">Activities per role</option>
+                <option value="duration_per_activity">Duration per Activity</option>
+                <option value="resource_time_distribution">Resource Time Distribution</option>
+                <option value="resources_per_activity">Resources per Activity</option>
+                <option value="activities_per_role">Activities per Role</option>
+                <option value="role_time_distribution">Role Time Distribution</option>
                 <option value="activity_average_duration">Duration per Activity and Role (Heatmap)</option>
                 <option value="activity_resource_comparison">Duration per Activity and Resource</option>
                 <option value="activity_resource_comparison_norm">Duration per Activity and Resource (Heatmap)</option>
+                <option value="capacity_utilization_resource">Resource Capacity Utilization</option>
+                <option value="capacity_utilization_role">Role Capacity Utilization</option>
+                <option value="capacity_utilization_activity">Activity Capacity Utilization</option>
+<!--
                 <option value="" disabled>---Additional analyses---</option>
                 <option value="duration_per_resource">Duration per resource</option>
                 <option value="resource_role_duration">Resource role duration</option>
                 <option value="roles_per_activity">Roles per activity</option>
                 <option value="slowest_resource">Slowest resource</option>
+-->
             </select>
+<!--            </div>-->
+<!--            <div id="toggle-labels">
+              <span class="toggle-label left">Average</span>
+            <label class="switch">
+            <input type="checkbox" id="toggleSwitch">
+            <span class="slider round"></span>
+            </label>
+              <span class="toggle-label right">Median</span>
+            </div>
+        </div>-->
             <div id="resultContainer"></div>
         </div>
     </div>

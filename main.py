@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 pd.set_option('display.max_columns', None)
 SESSION_DURATION = timedelta(hours=2)
 FILES_DIR = "files"
-TEST_FILE="hardcoded/PurchasingExample.csv"
+TEST_FILE="hardcoded/PurchasingExamplePseudo.csv"
 
 # Remove old uploads at init
 for filename in os.listdir(FILES_DIR):
@@ -54,7 +54,14 @@ from pm import (
     activities_per_role,
     activity_average_duration_with_roles,
     activity_resource_comparison,
-    slowest_resource_per_activity
+    slowest_resource_per_activity,
+    calculate_working_days,
+    capacity_utilization_resource,
+    capacity_utilization_role,
+    capacity_utilization_activity,
+    activity_case_duration,
+    total_duration_per_resource_and_activity,
+    total_duration_per_role_and_activity
     )
 
 @app.get("/")
@@ -68,6 +75,7 @@ def process_file(file_location: str):
     df["Complete Timestamp"] = pd.to_datetime(df["Complete Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
     # Calculate the time difference and create a new column
     df["Duration"] = df["Complete Timestamp"] - df["Start Timestamp"]
+    df['Case ID'] = df['Case ID'].astype(str)
     return df
 
 def describe_df(df):
@@ -237,3 +245,35 @@ async def read_units(session_id: str = Depends(get_session_id)):
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
     return slowest_resource_per_activity(df)
+
+@app.get("/capacity_utilization_resource")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return capacity_utilization_resource(df)
+
+@app.get("/capacity_utilization_role")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return capacity_utilization_role(df)
+
+@app.get("/capacity_utilization_activity")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return capacity_utilization_activity(df)
+
+@app.get("/duration_per_activity")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return activity_case_duration(df)
+
+@app.get("/resource_time_distribution")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return total_duration_per_resource_and_activity(df)
+
+@app.get("/role_time_distribution")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return total_duration_per_role_and_activity(df)
+
+
