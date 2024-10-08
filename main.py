@@ -61,7 +61,11 @@ from pm import (
     capacity_utilization_activity,
     activity_case_duration,
     total_duration_per_resource_and_activity,
-    total_duration_per_role_and_activity
+    total_duration_per_role_and_activity,
+    capacity_utilization_resource_new,
+    workload_distribution_per_resource,
+    capacity_utilization_role_new,
+    capacity_utilization_activity_new
     )
 
 @app.get("/")
@@ -249,17 +253,17 @@ async def read_units(session_id: str = Depends(get_session_id)):
 @app.get("/capacity_utilization_resource")
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
-    return capacity_utilization_resource(df)
+    return capacity_utilization_resource_new(df)
 
 @app.get("/capacity_utilization_role")
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
-    return capacity_utilization_role(df)
+    return capacity_utilization_role_new(df)
 
 @app.get("/capacity_utilization_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
-    return capacity_utilization_activity(df)
+    return capacity_utilization_activity_new(df)
 
 @app.get("/duration_per_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
@@ -276,4 +280,8 @@ async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
     return total_duration_per_role_and_activity(df)
 
+@app.get("/resource_role_time_distribution")
+async def read_units(session_id: str = Depends(get_session_id)):
+    df = sessions[session_id]["dataframe"]
+    return workload_distribution_per_resource(df)
 

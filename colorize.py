@@ -96,3 +96,8 @@ def get_colors(activities: dict, base_color: str = "#FFFFFF", target_color: str 
     else:
         raise ValueError(f"Unknown color type: {ctype}. Allowed options: bar, sat")
     return colors
+
+def split_equal(colors: list):
+    total = len(colors)
+    each = round(1/total,2)
+    return f";{each:.2f}:".join(colors)

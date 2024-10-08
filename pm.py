@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import seaborn as sns
 
 import pm4py
-from colorize import colorize_net, get_colors
+from colorize import colorize_net, get_colors, split_equal
 
 import base64
 from io import BytesIO
@@ -709,6 +709,46 @@ def calculate_working_days(start_date, end_date):
     all_days = pd.date_range(start=start_date, end=end_date, freq='B')  # 'B' represents business days (Mon-Fri)
     return len(all_days)
 
+# Advanced capacity calculation
+# helper functions
+# how many hours has a resource worked in the entire event log
+def worked_hours_per_resource(df):
+    result_df = df.groupby('Resource')['Duration'].sum().reset_index()
+
+    result_df = result_df.rename(columns={'Duration': 'Total Time Worked'})
+
+    #Convert to hours
+    result_df['Total Time Worked (hr)'] = (result_df['Total Time Worked'].dt.total_seconds() / 3600).round(2)
+
+    return result_df
+
+# how many hours has the resource worked each day
+# using first activity start as login
+# and last activity end as logoff
+def calculate_working_hours_per_day(df):
+    # Add a date column
+    df_with_date = df
+    df_with_date['Date'] = df_with_date['Start Timestamp'].dt.date
+
+    # Group by Resource and Date to calculate working hours
+    working_hours_per_day = df_with_date.groupby(['Resource', 'Date']).agg(Login=('Start Timestamp', 'min'), Logout=('Complete Timestamp', 'max')).reset_index()
+
+    # Calculate the working hours by subtracting start from end
+    working_hours_per_day['Available Working Hours per Day'] = ((working_hours_per_day['Logout'] - working_hours_per_day['Login']).dt.total_seconds() / 3600).round(2)
+
+    return working_hours_per_day
+
+# how many hours a resource was available for work in the entire event log
+def calculate_total_working_hours_per_resource(df):
+
+    # Group by Resource, sum working hours per day to get the total working hours per resource within the process cycle
+    result_df = calculate_working_hours_per_day(df).groupby('Resource')['Available Working Hours per Day'].sum().reset_index()
+
+    result_df = result_df.rename(columns={'Available Working Hours per Day': 'Total Available Working Hours'})
+
+    return result_df
+
+
 # Resource capacity
 def total_duration_per_activity_and_resource(df):
     # Group by Activity and Resource and sum durations to get the total time spent on each activity by each resource
@@ -861,6 +901,123 @@ def capacity_utilization_resource(df, work_hours_per_day=7.7):
     plot = fig.to_json()
     process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+def capacity_utilization_resource_new(df):
+    # get the overall time spent for each resource
+    worked_hours = worked_hours_per_resource(df)
+
+    working_hours = calculate_total_working_hours_per_resource(df)
+
+    # Merge the two DataFrames on the Resource column
+    result_df = pd.merge(worked_hours, working_hours, on='Resource', how='inner')
+
+    result_df.drop(columns=['Total Time Worked'], inplace=True)
+
+    # Calculate the capacity utilization for each resource
+    result_df['Capacity Utilization (%)'] = (result_df['Total Time Worked (hr)'] / result_df['Total Available Working Hours'] * 100).round(2)
+
+    #return result_df
+    capacity_utilization_resource_plot_new = result_df.copy()
+    fig = px.bar(capacity_utilization_resource_plot_new, x='Capacity Utilization (%)', y='Resource',
+        title='Capacity Utilization per Resource',
+        #labels={'Resource': 'Resource', 'Capacity Utilization (%)': 'Capacity Utilization (%)'},
+        color_discrete_sequence=['#2066a8'],
+        orientation="h",
+        category_orders={"Resource": capacity_utilization_resource_plot_new['Resource'].tolist()})
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+    process_model = capacity_utilization_activity_new(df).process_model
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+# Percentage of time spent by resource in a role
+def workload_distribution_per_resource(df):
+    # get time spent in each role for every resource
+    total_time_role = df.groupby(['Resource', 'Role'])['Duration'].sum().reset_index()
+
+    total_time_role = total_time_role.rename(columns={'Duration': 'Total Time Worked in Role (hr)'})
+
+    # convert to hours
+    total_time_role['Total Time Worked in Role (hr)'] = (total_time_role['Total Time Worked in Role (hr)'].dt.total_seconds() / 3600).round(2)
+
+    #get the overall time spent for each resource using previously defined function
+    total_time_resource = worked_hours_per_resource(df)
+
+    # Merge dfs
+    result_df = pd.merge(total_time_role, total_time_resource, on='Resource')
+    
+    # calculate relative time
+    result_df['Percentage (%)'] = ((result_df['Total Time Worked in Role (hr)'] / result_df['Total Time Worked (hr)']) * 100).round(2)
+    
+    # drop irrelevant columns
+    result_df.drop(columns=['Total Time Worked', 'Total Time Worked (hr)'], inplace=True)
+    
+    #return result_df
+    workload_distribution_per_resource_plot = result_df.copy()
+    unique_roles = workload_distribution_per_resource_plot['Role'].unique()
+    color_palette = sns.color_palette("husl", len(unique_roles)).as_hex()
+
+    role_color_mapping = {role: color_palette[i] for i, role in enumerate(unique_roles)}
+
+    fig = px.bar(workload_distribution_per_resource_plot, x='Percentage (%)', y='Resource',
+        color='Role',
+        title='Time Spent in Each Role by Resource',
+        labels={'Percentage (%)': 'Percentage of Time Spent [%]'},
+        orientation="h",
+        category_orders={'Resource': workload_distribution_per_resource_plot['Resource'].tolist()},
+        custom_data=['Role', 'Percentage (%)'],
+        barmode='stack',
+        color_discrete_sequence=color_palette)
+
+    fig.update_traces(hovertemplate='Role: %{customdata[0]}<br>Total Time Spent: %{customdata[1]}%' + '<extra></extra>')
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=800,  # Height in pixels
+        plot_bgcolor='white',
+        margin = {'pad': 15},
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        legend=dict(
+            orientation="h",
+            y=-0.2,
+            xanchor='center',  
+            x=0.45  
+        )
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+
+    activity_role_df = pd.DataFrame(activities_per_role(df).table)
+    unique_activities = activity_role_df['Activity'].unique()
+    activity_color_mapping = {activity: split_equal([role_color_mapping[role[1]] for role in activity_role_df.loc[activity_role_df['Activity']==activity, 'Role'].items()]) for activity in unique_activities}
+    print(activity_color_mapping)
+    #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
+    process_model = colorize_net(heu_net, activity_color_mapping)
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
 
 # Role capacity
 # Naive
@@ -1018,6 +1175,62 @@ def capacity_utilization_role(df, work_hours_per_day=7.7):
     plot = fig.to_json()
     process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+# Advanced
+def capacity_resource_role(df):
+    workload = pd.DataFrame(workload_distribution_per_resource(df).table)
+    availability = calculate_total_working_hours_per_resource(df)
+
+    result_df = pd.merge(workload, availability, on='Resource', how='inner')
+
+    result_df['Total Available Working Hours for this Role']= ((result_df['Percentage (%)']/100)*result_df['Total Available Working Hours']).round(2)
+
+     # drop irrelevant columns
+    result_df.drop(columns=['Total Available Working Hours'], inplace=True)
+
+    return result_df
+
+def capacity_utilization_role_new(df):
+    role_duration = df.groupby('Role')['Duration'].sum().reset_index()
+
+    role_duration['Duration'] = (role_duration['Duration'].dt.total_seconds() / 3600).round(2)
+
+    role_duration = role_duration.rename(columns={'Duration': 'Total Time Worked (hr)'})
+
+    role_capacity = capacity_resource_role(df).groupby('Role')['Total Available Working Hours for this Role'].sum().reset_index()
+
+    result_df = pd.merge(role_duration, role_capacity, on='Role', how='inner')
+
+    # Calculate the capacity utilization for each role
+    result_df['Capacity Utilization (%)'] = (result_df['Total Time Worked (hr)'] / result_df['Total Available Working Hours for this Role'] * 100).round(2)
+
+    #return result_df
+    capacity_utilization_role_plot = result_df.copy()
+    fig = px.bar(capacity_utilization_role_plot, x='Capacity Utilization (%)', y='Role',
+        title='Capacity Utilization per Role',
+        labels={'Role': 'Role', 'Capacity Utilization (%)': 'Capacity Utilization (%)'},
+        color_discrete_sequence=['#2066a8'],
+        orientation="h")
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+    process_model = capacity_utilization_activity_new(df).process_model
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
 
 # Activity capacity
 # Naive
@@ -1180,3 +1393,85 @@ def activity_case_duration(df):
     process_model = colorize_net(heu_net, colors)
 
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+
+# Advanced
+def activity_workload_distribution_per_resource(df):
+    # get time spent in each role for every resource
+    total_time_activity = df.groupby(['Resource', 'Activity'])['Duration'].sum().reset_index()
+
+    total_time_activity = total_time_activity.rename(columns={'Duration': 'Total Time Spent on Activity (hr)'})
+
+    # convert to hours
+    total_time_activity['Total Time Spent on Activity (hr)'] = (total_time_activity['Total Time Spent on Activity (hr)'].dt.total_seconds() / 3600).round(2)
+
+    #get the overall time spent for each resource using previously defined function
+    total_time_resource = worked_hours_per_resource(df)
+
+    # Merge dfs
+    result_df = pd.merge(total_time_activity, total_time_resource, on='Resource')
+    
+    # calculate relative time
+    result_df['Percentage (%)'] = ((result_df['Total Time Spent on Activity (hr)'] / result_df['Total Time Worked (hr)']) * 100).round(2)
+    
+    # drop irrelevant columns
+    result_df.drop(columns=['Total Time Worked', 'Total Time Worked (hr)'], inplace=True)
+    
+    return result_df
+
+def capacity_resource_activity(df):
+    workload = activity_workload_distribution_per_resource(df)
+    availability = calculate_total_working_hours_per_resource(df)
+
+    result_df = pd.merge(workload, availability, on='Resource', how='inner')
+
+    result_df['Total Available Working Hours for this Activity']= ((result_df['Percentage (%)']/100)*result_df['Total Available Working Hours']).round(2)
+
+     # drop irrelevant columns
+    result_df.drop(columns=['Total Available Working Hours'], inplace=True)
+
+    return result_df
+
+def capacity_utilization_activity_new(df):
+    activity_duration = df.groupby('Activity')['Duration'].sum().reset_index()
+
+    activity_duration['Duration'] = (activity_duration['Duration'].dt.total_seconds() / 3600).round(2)
+
+    activity_duration = activity_duration.rename(columns={'Duration': 'Total Time Spent (hr)'})
+
+    activity_capacity = capacity_resource_activity(df).groupby('Activity')['Total Available Working Hours for this Activity'].sum().reset_index()
+
+    result_df = pd.merge(activity_duration, activity_capacity, on='Activity', how='inner')
+
+    # Calculate the capacity utilization for each activity
+    result_df['Capacity Utilization (%)'] = (result_df['Total Time Spent (hr)'] / result_df['Total Available Working Hours for this Activity'] * 100).round(2)
+
+    #return result_df
+    capacity_utilization_activity_plot = result_df.copy()
+    fig = px.bar(capacity_utilization_activity_plot, x='Capacity Utilization (%)', y='Activity',
+        title='Capacity Utilization per Activity',
+        color_discrete_sequence=['#2066a8'],
+        orientation="h")
+
+    fig.update_traces(hovertemplate='Capacity Utilization: %{x}%')
+
+    fig.update_layout(
+        #width=1200,  # Width in pixels
+        height=576,  # Height in pixels
+        plot_bgcolor='white',
+        xaxis=dict(dtick=10),  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+
+    heu_net = pm4py.discover_heuristics_net(df, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+
+    colors = get_colors(dict(zip(result_df['Activity'], result_df['Capacity Utilization (%)'].fillna(0) / 100)))
+    process_model = colorize_net(heu_net, colors)
+
+    return OutputModel(table=result_df.replace({np.nan: None}).to_dict(orient="records"), plot=plot, process_model=process_model)
