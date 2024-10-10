@@ -47,6 +47,56 @@ color_scale = [
    [1.0, "#ae282c"]
 ]
 
+custom_palette_1 = [
+    "#E68A75",
+    "#75E68A",
+    "#758AE6",
+    "#E675A3",
+    "#E6B875",
+    "#75E6CC",
+    "#B875E6",
+    "#E6D475",
+    "#8AE675",
+    "#db6d53", 
+    "#8A75E6",
+    "#75E6C2",
+    "#E675D4",
+    "#E6A275",
+    "#75B8E6",
+    "#913ec9", 
+    "#E6E675",
+    "#75E6A2",
+    "#E67575",
+    "#75E675",
+    "#478ebf", #replace
+    "#A275E6",
+    "#E6CC75",
+    "#a7e8de"
+]
+
+custom_palette_2 = [
+    "#758AE6",
+    "#E675A3",
+    "#E6B875",
+    "#75E6CC",
+    "#B875E6"
+]
+
+def prettify_df(df):
+    df_new = df.copy()
+    for col,coltype in df_new.dtypes.to_dict().items():
+        if coltype=='timedelta64[ns]':
+            new_col = f"{col} (Minutes)"
+            df_new[col] = (df_new[col].dt.total_seconds() / 60).round(2)
+            #df_new.drop(col, axis=1, inplace=True)
+            df_new.rename({col:new_col}, axis=1, inplace=True)
+
+    for col,coltype in df_new.dtypes.to_dict().items():
+        if coltype=='float64':
+            df_new[col] = df_new[col].round(2)
+
+    return df_new
+
 def units_per_role(df):
     df = df.groupby('Role')['Resource'].nunique().reset_index()
 
@@ -364,7 +414,7 @@ def resource_within_role_normalization(df):
 
     process_model = activity_case_duration(df).process_model
 
-    return OutputModel(table=normalized_df.to_dict(orient="records"), plot=plot, big_plot=big_plot, process_model=process_model)
+    return OutputModel(table=prettify_df(normalized_df).to_dict(orient="records"), plot=plot, big_plot=big_plot, process_model=process_model)
 
 
 def roles_per_activity(df, count: bool = True):
@@ -382,7 +432,8 @@ def resources_per_activity(df, count: bool = True):
         # TODO: output list in second column
         result_df = df.groupby(['Activity','Resource']).size().reset_index().drop(0, axis=1)
 
-    fig = px.bar(result_df, x='Resource', y='Activity',
+    result_df.rename({'Resource':'Number of Resources'}, axis=1, inplace=True)
+    fig = px.bar(result_df, x='Number of Resources', y='Activity',
         title='Number of Unique Resources per Activity',
         color_discrete_sequence=[BLUE],
         orientation="h")
@@ -431,6 +482,56 @@ def activities_per_role(df):
 
     return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
 
+def activities_per_role_new(df):
+    unique_roles = []
+    activities_per_role = []
+    activitiy_count = []
+
+    # Group by Resource
+    grouped_roles = df.groupby('Role')
+
+    # Iterate through groups
+    for role, role_df in grouped_roles:
+        unique_roles.append(role)
+        # Append roles for the current resource as a list
+        activities = ', '.join(role_df['Activity'].unique().tolist())
+        activities_per_role.append(activities)
+        # Append the number of roles for the current resource
+        activitiy_count.append(role_df['Activity'].nunique())
+        
+    # Create a new df
+    result_df = pd.DataFrame({
+        'Role': unique_roles,
+        'Number of Activities': activitiy_count,
+        'Activities': activities_per_role
+    })
+
+    #return result_df
+    plot_df = result_df.copy()
+    hovertext = [activity.replace(', ', '<br>') for activity in plot_df['Activities']]
+
+    fig = px.bar(plot_df, x='Number of Activities', y='Role',
+        title='Number of Activities per Role',
+        color_discrete_sequence=['#2066a8'])
+
+    fig.update_traces(hovertemplate='Activities: <br>%{customdata}', customdata=hovertext)
+
+    fig.update_layout(
+        #width=1200, 
+        height=576,  
+        plot_bgcolor='white',  
+        title={
+            'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        }
+    )
+
+    plot = fig.to_json()
+
+    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
+
 
 def activity_average_duration_with_roles(df):
     # Group by Role and Activity
@@ -463,8 +564,6 @@ def activity_average_duration_with_roles(df):
 
     all_roles = heatmap_roles['Role'].unique()
     all_activities = heatmap_roles['Activity'].unique()
-
-
 
     # Create pivot table
     table = heatmap_roles.pivot_table(index='Activity', columns='Role', values='Normalized Duration', aggfunc='mean', dropna=False)
@@ -504,7 +603,7 @@ def activity_average_duration_with_roles(df):
     result_df.drop('Average Case Duration', axis=1, inplace=True)
     result_df['Normalized Duration'] = result_df.groupby('Role')['Average Case Duration (Minutes)'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot)
 
 # TODO: activity_resource_comparison is the same just w/o norm?
 def activity_resource_comparison(df, normalize: bool = False):
@@ -526,9 +625,10 @@ def activity_resource_comparison(df, normalize: bool = False):
     # Apply Min-Max Normalization within each activity
     if normalize:
         result_df['Normalized Duration'] = result_df.groupby('Activity')['Average Case Duration'].transform(lambda x: (x - x.min()) / (x.max() - x.min()))
-        import numpy as np
+        #result_df['Normalized Duration'] = result_df['Normalized Duration'].astype('float64')
+        #import numpy as np
         # TODO: optimize
-        result_df = result_df.replace({np.nan: None})
+        #result_df = result_df.replace({np.nan: None})
 
     if not normalize:
         unique_activities = result_df['Activity'].unique()
@@ -573,14 +673,18 @@ def activity_resource_comparison(df, normalize: bool = False):
         result_df['Average Case Duration (Minutes)'] = result_df['Average Case Duration (Minutes)'].round(2)
         result_df.drop('Average Case Duration', axis=1, inplace=True)
 
-        return OutputModel(table=result_df.to_dict(orient="records"), big_plot=big_plot)
+        result_df = result_df.replace({np.nan: None})
+
+        return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), big_plot=big_plot)
 
     if normalize:
         normalized_data = result_df.copy()
 
         # Convert 'Average Case Duration' from Timedelta to minutes
-        normalized_data['Average Case Duration (Minutes)'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
-        normalized_data.drop('Average Case Duration', axis=1, inplace=True)
+        #normalized_data['Average Case Duration (Minutes)'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
+        #normalized_data.drop('Average Case Duration', axis=1, inplace=True)
+        normalized_data['Average Case Duration'] = (normalized_data['Average Case Duration'].dt.total_seconds() / 60).round(2)
+        normalized_data.rename({'Average Case Duration':'Average Case Duration (Minutes)'}, axis=1, inplace=True)
 
         # Prepare the data for the heatmap
         pivot_table = normalized_data.pivot(index='Activity', columns='Resource', values='Normalized Duration')
@@ -643,7 +747,7 @@ def activity_resource_comparison(df, normalize: bool = False):
             }
         )
         big_plot = fig.to_json()
-        return OutputModel(table=normalized_data.to_dict(orient="records"), plot=plot, big_plot=big_plot)
+        return OutputModel(table=prettify_df(normalized_data).replace({np.nan: None}).to_dict(orient="records"), plot=plot, big_plot=big_plot)
 
 def slowest_resource_per_activity(df):
     # Group by Activity and then Resource
@@ -698,7 +802,7 @@ def slowest_resource_per_activity(df):
     )
     plot = fig.to_json()
     #return result_df
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot)
 
 #### Extension ####
 def get_timeframe(df):
@@ -785,7 +889,7 @@ def total_duration_per_resource_and_activity(df):
     #return result_df
     resource_time_distribution_plot = result_df.copy()
     unique_activities = resource_time_distribution_plot['Activity'].unique()
-    color_palette = sns.color_palette("husl", len(unique_activities)).as_hex()
+    color_palette = custom_palette_1 #sns.color_palette("husl", len(unique_activities)).as_hex()
 
     # dictionary for dfg color coding
     activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
@@ -839,7 +943,7 @@ def total_duration_per_resource_and_activity(df):
     #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
     process_model = colorize_net(heu_net, activity_color_mapping)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 
 def total_duration_per_resource(df):
@@ -900,7 +1004,7 @@ def capacity_utilization_resource(df, work_hours_per_day=7.7):
 
     plot = fig.to_json()
     process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 def capacity_utilization_resource_new(df):
     # get the overall time spent for each resource
@@ -942,7 +1046,7 @@ def capacity_utilization_resource_new(df):
 
     plot = fig.to_json()
     process_model = capacity_utilization_activity_new(df).process_model
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 # Percentage of time spent by resource in a role
 def workload_distribution_per_resource(df):
@@ -969,7 +1073,7 @@ def workload_distribution_per_resource(df):
     #return result_df
     workload_distribution_per_resource_plot = result_df.copy()
     unique_roles = workload_distribution_per_resource_plot['Role'].unique()
-    color_palette = sns.color_palette("husl", len(unique_roles)).as_hex()
+    color_palette = custom_palette_2 #sns.color_palette("husl", len(unique_roles)).as_hex()
 
     role_color_mapping = {role: color_palette[i] for i, role in enumerate(unique_roles)}
 
@@ -1016,7 +1120,7 @@ def workload_distribution_per_resource(df):
     #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
     process_model = colorize_net(heu_net, activity_color_mapping)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 
 # Role capacity
@@ -1071,7 +1175,7 @@ def total_duration_per_role_and_activity(df):
     #return result_df
     role_time_distribution_plot = result_df.copy()
     unique_activities = role_time_distribution_plot['Activity'].unique()
-    color_palette = sns.color_palette("husl", len(unique_activities)).as_hex()
+    color_palette = custom_palette_1 #sns.color_palette("husl", len(unique_activities)).as_hex()
 
     # dictionary for dfg color coding
     activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
@@ -1125,7 +1229,7 @@ def total_duration_per_role_and_activity(df):
     #colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
     process_model = colorize_net(heu_net, activity_color_mapping)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 def capacity_utilization_role(df, work_hours_per_day=7.7):
     start_date, end_date = get_timeframe(df)
@@ -1174,7 +1278,7 @@ def capacity_utilization_role(df, work_hours_per_day=7.7):
 
     plot = fig.to_json()
     process_model = capacity_utilization_activity(df, work_hours_per_day).process_model
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 # Advanced
 def capacity_resource_role(df):
@@ -1229,7 +1333,7 @@ def capacity_utilization_role_new(df):
 
     plot = fig.to_json()
     process_model = capacity_utilization_activity_new(df).process_model
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 
 # Activity capacity
@@ -1314,7 +1418,7 @@ def capacity_utilization_activity(df, work_hours_per_day=7.7):
     #process_model = base64.b64encode(png_image).decode('utf-8')
     process_model = colorize_net(heu_net, colors)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 
 def activity_case_duration(df):
@@ -1332,25 +1436,25 @@ def activity_case_duration(df):
 
         # Calculate and append avg/median case duration
         average_duration = case_durations.mean()
-        median_duration = case_durations.median()
+        #median_duration = case_durations.median()
 
         unique_activities.append(activity)
         average_duration_per_case.append(average_duration)
-        median_duration_per_case.append(median_duration)
+        #median_duration_per_case.append(median_duration)
 
     # Create resulting df
     result_df = pd.DataFrame({
         "Activity": unique_activities,
-        "Average Case Duration": average_duration_per_case,
-        "Median Case Duration": median_duration_per_case
+        "Average Case Duration": average_duration_per_case #,
+        #"Median Case Duration": median_duration_per_case
     })
     
     ## Perform min-max normalization using lambda functions on both Average and Median Case Duration
     result_df['Normalized Average Case Duration'] = result_df['Average Case Duration'].apply(
         lambda x: (x - result_df['Average Case Duration'].min()) / (result_df['Average Case Duration'].max() - result_df['Average Case Duration'].min()))
         
-    result_df['Normalized Median Case Duration'] = result_df['Median Case Duration'].apply(
-        lambda x: (x - result_df['Median Case Duration'].min()) / (result_df['Median Case Duration'].max() - result_df['Median Case Duration'].min()))
+    #result_df['Normalized Median Case Duration'] = result_df['Median Case Duration'].apply(
+    #    lambda x: (x - result_df['Median Case Duration'].min()) / (result_df['Median Case Duration'].max() - result_df['Median Case Duration'].min()))
 
     #return result_df
 
@@ -1392,7 +1496,7 @@ def activity_case_duration(df):
     #process_model = base64.b64encode(png_image).decode('utf-8')
     process_model = colorize_net(heu_net, colors)
 
-    return OutputModel(table=result_df.to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
 # Advanced
 def activity_workload_distribution_per_resource(df):
@@ -1448,7 +1552,7 @@ def capacity_utilization_activity_new(df):
     #return result_df
     capacity_utilization_activity_plot = result_df.copy()
     fig = px.bar(capacity_utilization_activity_plot, x='Capacity Utilization (%)', y='Activity',
-        title='Capacity Utilization per Activity',
+        title='Percentage of Time Spent in Each Role by Resource',
         color_discrete_sequence=['#2066a8'],
         orientation="h")
 
@@ -1460,7 +1564,7 @@ def capacity_utilization_activity_new(df):
         plot_bgcolor='white',
         xaxis=dict(dtick=10),  
         title={
-            'y':0.9,
+            'y':0.9, #-0.15, #0.9,
             'x':0.5,
             'xanchor': 'center',
             'yanchor': 'top'
@@ -1474,4 +1578,4 @@ def capacity_utilization_activity_new(df):
     colors = get_colors(dict(zip(result_df['Activity'], result_df['Capacity Utilization (%)'].fillna(0) / 100)))
     process_model = colorize_net(heu_net, colors)
 
-    return OutputModel(table=result_df.replace({np.nan: None}).to_dict(orient="records"), plot=plot, process_model=process_model)
+    return OutputModel(table=prettify_df(result_df).replace({np.nan: None}).to_dict(orient="records"), plot=plot, process_model=process_model)

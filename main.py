@@ -65,7 +65,8 @@ from pm import (
     capacity_utilization_resource_new,
     workload_distribution_per_resource,
     capacity_utilization_role_new,
-    capacity_utilization_activity_new
+    capacity_utilization_activity_new,
+    activities_per_role_new
     )
 
 @app.get("/")
@@ -86,7 +87,8 @@ def describe_df(df):
     dff = df.drop(columns=["Duration"], inplace=False)
     dff = pm4py.format_dataframe(dff, case_id="Case ID", activity_key="Activity", timestamp_key="Complete Timestamp")
     event_log = pm4py.convert_to_event_log(dff)
-    heu_net = pm4py.discover_heuristics_net(event_log, dependency_threshold=0.99)
+    #heu_net = pm4py.discover_heuristics_net(event_log, dependency_threshold=0.99)
+    heu_net = pm4py.discover_heuristics_net(dff, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
     graph = pm4py.visualization.heuristics_net.visualizer.get_graph(heu_net)
     png_image = graph.create_png()
     image_base64 = base64.b64encode(png_image).decode('utf-8')
@@ -228,7 +230,7 @@ async def read_units(session_id: str = Depends(get_session_id)):
 @app.get("/activities_per_role")
 async def read_units(session_id: str = Depends(get_session_id)):
     df = sessions[session_id]["dataframe"]
-    return activities_per_role(df)
+    return activities_per_role_new(df)
 
 @app.get("/activity_average_duration")
 async def read_units(session_id: str = Depends(get_session_id)):

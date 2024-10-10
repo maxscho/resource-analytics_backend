@@ -22,20 +22,28 @@ document.querySelectorAll('.custom-select').forEach(function(select) {
     Array.from(select.options).forEach(option => {
         var item = document.createElement('li');
         item.textContent = option.textContent;
-        item.addEventListener('click', function() {
-            select.value = option.value;
-            display.textContent = option.textContent;
-            optionsList.style.display = 'none';
 
-            // Manually trigger the change event on the original select element
-            if (typeof Event === 'function') {
-                var event = new Event('change');  // Modern browsers
-            } else {
-                var event = document.createEvent('Event');  // For old browsers
-                event.initEvent('change', true, true);
-            }
-            select.dispatchEvent(event);
-        });
+        if (option.disabled) {
+            item.classList.add('select-header'); // Add 'header' class for styling
+            item.style.cursor = 'default'; // Ensure it doesn't look clickable
+            //item.style.color = 'gray'; // Differentiate headers by color
+            //item.style.backgroundColor = '#f0f0f0'; // Light background for headers
+        } else {
+            item.addEventListener('click', function() {
+                select.value = option.value;
+                display.textContent = option.textContent;
+                optionsList.style.display = 'none';
+
+                // Manually trigger the change event on the original select element
+                if (typeof Event === 'function') {
+                    var event = new Event('change');  // Modern browsers
+                } else {
+                    var event = document.createEvent('Event');  // For old browsers
+                    event.initEvent('change', true, true);
+                }
+                select.dispatchEvent(event);
+            });
+        }
         optionsList.appendChild(item);
     });
     container.appendChild(optionsList);
@@ -163,9 +171,9 @@ const analysis = function() {
         })
         .then(data => {
             let content = '';
-            content += '<p> ⓘ Plots and tables are interactive, hover and click them for additional info.</p>'  //'&#9432;'
+            content += '<p> ⓘ Plots and tables are interactive, hover over the plot for more information.</p>'  //'&#9432;'
             if (data.big_plot) {
-                content += `<p>Scroll down for additional plot.</p>`;
+                content += `<p>Scroll down for additional plots.</p>`;
             }
             if (data.image) {
                 content += `<img src="data:image/jpeg;base64,${data.image}" style="max-width:100%; height:auto;">`;

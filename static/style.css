@@ -121,6 +121,7 @@ button:hover {
   user-select: none;
   position: relative;
   border-radius: 5px;
+  width: 110%;
 }
 
 .custom-select-display:after {
@@ -143,6 +144,10 @@ button:hover {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.custom-select-options .select-header {
+  background-color: #225588;
 }
 
 .custom-select-options li {
