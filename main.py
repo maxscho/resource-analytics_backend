@@ -69,6 +69,24 @@ from pm import (
     activities_per_role_new
     )
 
+def get_dataframe_from_session(session_id: str, session_dict: dict):
+    # Check if session ID exists
+    if session_id not in session_dict:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Retrieve session data
+    session_data = session_dict.get(session_id)
+    if not session_data or "dataframe" not in session_data:
+        raise HTTPException(status_code=400, detail="Session data is incomplete")
+
+    # Retrieve the dataframe
+    df = session_data["dataframe"]
+    if df is None or df.empty:
+        raise HTTPException(status_code=400, detail="Problem with the session or dataframe is empty")
+
+    return df
+
+
 @app.get("/")
 async def get_index():
     return FileResponse("static/index.html")
@@ -189,101 +207,102 @@ async def test():
 
 @app.get("/units")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return units_per_role(df)
 
 @app.get("/duration_per_role")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return role_average_duration(df)
+
 
 @app.get("/duration_per_resource")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return resource_average_duration(df)
 
 @app.get("/resource_within_role_norm")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return resource_within_role_normalization(df)
 
 @app.get("/resource_roles")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return resource_roles(df)
 
 @app.get("/resource_role_duration")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return resource_role_average_duration(df)
 
 @app.get("/roles_per_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return roles_per_activity(df)
 
 @app.get("/resources_per_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return resources_per_activity(df)
 
 @app.get("/activities_per_role")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return activities_per_role_new(df)
 
 @app.get("/activity_average_duration")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return activity_average_duration_with_roles(df)
 
 @app.get("/activity_resource_comparison")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return activity_resource_comparison(df)
 
 @app.get("/activity_resource_comparison_norm")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return activity_resource_comparison(df, normalize=True)
 
 @app.get("/slowest_resource")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return slowest_resource_per_activity(df)
 
 @app.get("/capacity_utilization_resource")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return capacity_utilization_resource_new(df)
 
 @app.get("/capacity_utilization_role")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return capacity_utilization_role_new(df)
 
 @app.get("/capacity_utilization_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return capacity_utilization_activity_new(df)
 
 @app.get("/duration_per_activity")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return activity_case_duration(df)
 
 @app.get("/resource_time_distribution")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return total_duration_per_resource_and_activity(df)
 
 @app.get("/role_time_distribution")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return total_duration_per_role_and_activity(df)
 
 @app.get("/resource_role_time_distribution")
 async def read_units(session_id: str = Depends(get_session_id)):
-    df = sessions[session_id]["dataframe"]
+    df = get_dataframe_from_session(session_id, sessions)
     return workload_distribution_per_resource(df)
 
