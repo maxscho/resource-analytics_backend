@@ -578,7 +578,11 @@ def activity_average_duration_with_roles(df):
         hoverinfo='text',
         text=hover_text_hm.values,
         colorscale=color_scale,
-        colorbar=dict(title='Average Case Duration (normalized)', tickvals=[0, 1], ticktext=['Fastest<br>Resource', 'Slowest<br>Resource'],titleside='right'),
+        colorbar=dict(
+            title=dict(text='Average Case Duration (normalized)', side='right'),
+            tickvals=[0, 1],
+            ticktext=['Fastest<br>Resource', 'Slowest<br>Resource']
+        ),
         showscale=True,
         xgap=2,
         ygap=2
@@ -701,7 +705,10 @@ def activity_resource_comparison(df, normalize: bool = False):
             hoverinfo='text',
             text=hover_text.values,
             colorscale=color_scale,
-            colorbar=dict(title='Average Case Duration (normalized)', tickvals=[0, 1], ticktext=['Fastest<br>Resource', 'Slowest<br>Resource'], titleside='right'),
+            colorbar=dict(
+                title='Average Case Duration (normalized)',
+                tickvals=[0, 1],
+                ticktext=['Fastest<br>Resource', 'Slowest<br>Resource']),
             showscale=True,
             xgap=2,
             ygap=2
