@@ -1,0 +1,128 @@
+[
+    {
+        "value": null,
+        "label": "No Analysis",
+        "disabled": null,
+        "info": "No specific analysis is selected. Use this option to reset or start fresh."
+    },
+    {
+        "value": null,
+        "label": "Resource Allocation",
+        "disabled": 1.0,
+        "info": "Analyzes how resources are assigned to tasks or roles. Helps identify over-allocated or under-utilized resources."
+    },
+    {
+        "value": "units",
+        "label": "Unique Resources",
+        "disabled": null,
+        "info": "Displays the total number of unique resources available in the system."
+    },
+    {
+        "value": "resource_roles",
+        "label": "Roles per Resource",
+        "disabled": null,
+        "info": "Shows the distribution of roles assigned to each resource. Helps identify multi-skilled resources or role overlaps."
+    },
+    {
+        "value": "resources_per_activity",
+        "label": "Resources per Activity",
+        "disabled": null,
+        "info": "Indicates the number of resources assigned to each activity. Useful for identifying bottlenecks or overstaffed activities."
+    },
+    {
+        "value": "activities_per_role",
+        "label": "Activities per Role",
+        "disabled": null,
+        "info": "Lists the activities associated with each role. Helps understand the workload distribution across roles."
+    },
+    {
+        "value": null,
+        "label": "Case Duration",
+        "disabled": 1.0,
+        "info": "Focuses on the time taken to complete cases or processes. Helps identify delays or inefficiencies."
+    },
+    {
+        "value": "duration_per_role",
+        "label": "Duration per Role",
+        "disabled": null,
+        "info": "Measures the average time spent by each role on activities. Helps identify roles that may be overburdened or underutilized."
+    },
+    {
+        "value": "resource_within_role_norm",
+        "label": "Duration per Role and Resource",
+        "disabled": null,
+        "info": "Normalized view of time spent by each resource within a role. Useful for comparing resource efficiency within the same role."
+    },
+    {
+        "value": "duration_per_activity",
+        "label": "Duration per Activity",
+        "disabled": null,
+        "info": "Tracks the time spent on each activity. Helps identify time-consuming tasks or inefficiencies."
+    },
+    {
+        "value": "activity_average_duration",
+        "label": "Duration per Activity and Role (Heatmap)",
+        "disabled": null,
+        "info": "Visualizes the average duration of activities by role in a heatmap format. Helps identify patterns or outliers in activity durations."
+    },
+    {
+        "value": "activity_resource_comparison",
+        "label": "Duration per Activity and Resource",
+        "disabled": null,
+        "info": "Compares the time spent by different resources on the same activity. Useful for identifying performance discrepancies."
+    },
+    {
+        "value": "activity_resource_comparison_norm",
+        "label": "Duration per Activity and Resource (Heatmap)",
+        "disabled": null,
+        "info": "Normalized heatmap comparing resource performance across activities. Helps identify inefficiencies or training needs."
+    },
+    {
+        "value": null,
+        "label": "Workload Distribution",
+        "disabled": 1.0,
+        "info": "Analyzes how workloads are distributed across resources, roles, and activities. Helps ensure balanced workloads and prevent burnout."
+    },
+    {
+        "value": "resource_role_time_distribution",
+        "label": "Role by Resource",
+        "disabled": null,
+        "info": "Shows how time is distributed across roles for each resource. Helps identify resources with uneven workloads."
+    },
+    {
+        "value": "resource_time_distribution",
+        "label": "Activity by Resource",
+        "disabled": null,
+        "info": "Displays the distribution of time spent by each resource on different activities. Helps identify resource specialization or overcommitment."
+    },
+    {
+        "value": "role_time_distribution",
+        "label": "Activity by Role",
+        "disabled": null,
+        "info": "Illustrates the distribution of time spent by each role on different activities. Helps identify role-specific inefficiencies or bottlenecks."
+    },
+    {
+        "value": null,
+        "label": "Capacity Utilization",
+        "disabled": 1.0,
+        "info": "Measures how effectively resources, roles, and activities are utilized. Helps identify underutilized or overburdened areas."
+    },
+    {
+        "value": "capacity_utilization_resource",
+        "label": "Resource Capacity Utilization",
+        "disabled": null,
+        "info": "Tracks the utilization rate of individual resources. Helps identify underutilized or overworked resources."
+    },
+    {
+        "value": "capacity_utilization_role",
+        "label": "Role Capacity Utilization",
+        "disabled": null,
+        "info": "Measures the utilization rate of roles. Helps identify roles that are overburdened or underutilized."
+    },
+    {
+        "value": "capacity_utilization_activity",
+        "label": "Activity Capacity Utilization",
+        "disabled": null,
+        "info": "Tracks the utilization rate of activities. Helps identify activities that are underperforming or over-resourced."
+    }
+]

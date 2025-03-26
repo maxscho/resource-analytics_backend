@@ -14,6 +14,7 @@ import uuid, os
 import base64
 
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import RedirectResponse
 
 pd.set_option('display.max_columns', None)
 SESSION_DURATION = timedelta(hours=2)
@@ -66,10 +67,12 @@ from pm import (
     workload_distribution_per_resource,
     capacity_utilization_role_new,
     capacity_utilization_activity_new,
-    activities_per_role_new
-    )
+    activities_per_role_new,
+    info_panel_file,
+    filter_values_from_df, AnalysisFilterModel
+)
 
-def get_dataframe_from_session(session_id: str, session_dict: dict):
+def get_dataframe_from_session(session_id: str, session_dict: dict, df_type: str = "filtered_dataframe"):
     # Check if session ID exists
     if session_id not in session_dict:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -80,11 +83,19 @@ def get_dataframe_from_session(session_id: str, session_dict: dict):
         raise HTTPException(status_code=400, detail="Session data is incomplete")
 
     # Retrieve the dataframe
-    df = session_data["dataframe"]
+    df = session_data[df_type]
     if df is None or df.empty:
         raise HTTPException(status_code=400, detail="Problem with the session or dataframe is empty")
 
     return df
+
+def set_dataframe_session(session_id: str, df: pd.DataFrame, df_type: str):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session_data = sessions.get(session_id)
+    if not session_data or "dataframe" not in session_data:
+        raise HTTPException(status_code=400, detail="Session data is incomplete")
+    session_data[df_type] = df
 
 
 @app.get("/")
@@ -139,10 +150,11 @@ async def upload(file: UploadFile):
     sessions[session_id] = {
         "file_location": file_location,
         "dataframe": df,
+        "filtered_dataframe": df,
         "expiration": expiration_date
     }
     image_base64, metrics = describe_df(df)
-    response = JSONResponse(content={"image":image_base64, "table":metrics})
+    response = JSONResponse(content={"image":image_base64, "table":metrics, "renderAnalysis":True})
     response.set_cookie(key="session_id", value=session_id)
     return response
 
@@ -162,6 +174,7 @@ async def fake_upload(file: Optional[UploadFile] = File(None)):
     sessions[session_id] = {
         "file_location": file_location,
         "dataframe": df,
+        "filtered_dataframe": df,
         "expiration": expiration_date
     }
     image_base64, metrics = describe_df(df)
@@ -204,6 +217,53 @@ async def check_session(request: Request, call_next):
 async def test():
     raise HTTPException(status_code=401, detail="Session expired")
 
+@app.post("/filter_analysis")
+async def receive_filter_analysis(analysis_filter_model: AnalysisFilterModel, session_id: str = Depends(get_session_id)):
+    df_full = get_dataframe_from_session(session_id, sessions, "dataframe")
+    #df_prev_filtered = get_dataframe_from_session(session_id, sessions, "filtered_dataframe")
+    print(f"Received information: {analysis_filter_model}")
+
+    original_columns = df_full.columns  # Store original names before modification
+    print(f"Original columns: {original_columns}")
+    df_full.columns = [col.lower() for col in df_full.columns]
+
+    # Normalize keys to lowercase and remove None values
+    filter_dict = {k.lower(): v for k, v in analysis_filter_model.model_dump().items() if v != ''}
+
+    filter_dict.pop("Metric", None)
+    print(f"Filter: {filter_dict}")
+
+    if filter_dict:
+        df_filtered = df_full
+        print("with filter values", filter_dict)
+        for key, value in filter_dict.items():
+            if key in df_filtered.columns:
+                df_filtered = df_filtered[df_filtered[key] == value]
+    else:
+        df_filtered = df_full
+
+    if df_filtered.empty:
+        print("Warning: DataFrame is empty after filtering!")
+
+    df_full.columns = original_columns
+    df_filtered.columns = original_columns
+
+    set_dataframe_session(session_id, df_filtered, "filtered_dataframe")
+
+    return {"filtered_data": df_filtered.to_dict(orient="records")}
+
+
+@app.get("/infoPanel")
+async def readInfoPanelFile(session_id: str = Depends(get_session_id)):
+    file_path = "data/InfoPanel.json"  # Ensure this file exists in your server directory
+    if os.path.exists(file_path):
+        return FileResponse(file_path, media_type="application/json", filename="data.json")
+    return {"error": "File not found"}
+
+@app.get("/filterValues")
+async def filter_values(session_id: str = Depends(get_session_id)):
+    df = get_dataframe_from_session(session_id, sessions)
+    return filter_values_from_df(df)
 
 @app.get("/units")
 async def read_units(session_id: str = Depends(get_session_id)):

@@ -5,6 +5,8 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import seaborn as sns
+import os
+import json
 
 import pm4py
 from colorize import colorize_net, get_colors, split_equal
@@ -22,6 +24,11 @@ class OutputModel(BaseModel):
     big_plot: str | None = None
     process_model: str | None = None
 
+class AnalysisFilterModel(BaseModel):
+    metric: str
+    resource: str
+    role: str
+    activity: str
 
 pd.set_option('display.max_columns', None)
 
@@ -81,6 +88,28 @@ custom_palette_2 = [
     "#75E6CC",
     "#B875E6"
 ]
+
+def filter_values_from_df(df):
+    unique_values = {
+        "Activity": df["Activity"].unique().tolist(),
+        "Resource": df["Resource"].unique().tolist(),
+        "Role": df["Role"].unique().tolist(),
+        "Metric": []
+    }
+    return unique_values
+
+def info_panel_file(df):
+    file_path = os.path.join("data", "InfoPanel.json")
+
+    # Ensure the file exists before trying to read it
+    if not os.path.exists(file_path):
+        return {"error": f"InfoPanel.json not found at {file_path}"}
+
+    # Read the JSON file
+    with open(file_path, "r") as file:
+        data = json.load(file)
+
+    return data
 
 def prettify_df(df):
     df_new = df.copy()
