@@ -29,7 +29,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], #["http://localhost:8080"],
+    #allow_origins=["*"], #["http://localhost:8080"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,8 +154,15 @@ async def upload(file: UploadFile):
         "filtered_dataframe": df,
         "expiration": expiration_date
     }
+
     image_base64, metrics = describe_df(df)
-    response = JSONResponse(content={"image":image_base64, "table":metrics, "renderAnalysis":True})
+    response = JSONResponse(content={
+        "image":image_base64,
+        "table":metrics,
+        "renderAnalysis":True,
+        "activity": df["Activity"].unique().tolist(),
+        "resource": df["Resource"].unique().tolist(),
+        "role": df["Role"].unique().tolist()})
     response.set_cookie(key="session_id", value=session_id)
     return response
 
