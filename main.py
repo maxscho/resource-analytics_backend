@@ -73,30 +73,36 @@ from pm import (
     filter_values_from_df, AnalysisFilterModel
 )
 
-def get_dataframe_from_session(session_id: str, session_dict: dict, df_type: str = "filtered_dataframe"):
-    # Check if session ID exists
+def get_dataframe_from_session(session_id: str, session_dict: dict, panel_id: str, df_type: str = "filtered_dataframe"):
     if session_id not in session_dict:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Retrieve session data
     session_data = session_dict.get(session_id)
-    if not session_data or "dataframe" not in session_data:
+    if not session_data or "panels" not in session_data:
         raise HTTPException(status_code=400, detail="Session data is incomplete")
 
-    # Retrieve the dataframe
-    df = session_data[df_type]
+    panel_data = session_data["panels"].get(panel_id)
+    if not panel_data or df_type not in panel_data:
+        raise HTTPException(status_code=400, detail=f"Panel '{panel_id}' or dataframe '{df_type}' not found")
+
+    df = panel_data[df_type]
     if df is None or df.empty:
-        raise HTTPException(status_code=400, detail="Problem with the session or dataframe is empty")
+        raise HTTPException(status_code=400, detail="Dataframe is empty")
 
     return df
 
-def set_dataframe_session(session_id: str, df: pd.DataFrame, df_type: str):
+def set_dataframe_session(session_id: str, df: pd.DataFrame, df_type: str, panel_id: str = "default"):
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
+    
     session_data = sessions.get(session_id)
-    if not session_data or "dataframe" not in session_data:
+    if not session_data or "panels" not in session_data:
         raise HTTPException(status_code=400, detail="Session data is incomplete")
-    session_data[df_type] = df
+
+    if panel_id not in session_data["panels"]:
+        session_data["panels"][panel_id] = {}
+
+    session_data["panels"][panel_id][df_type] = df
 
 
 @app.get("/")
@@ -135,7 +141,7 @@ def describe_df(df):
     return (image_base64, metrics)
 
 @app.post("/upload")
-async def upload(file: UploadFile):
+async def upload(file: UploadFile, panel_id: str = Query(...)):
     session_id = str(uuid.uuid4())
     expiration_date = datetime.now() + SESSION_DURATION
 
@@ -145,14 +151,19 @@ async def upload(file: UploadFile):
     file_location = f"{FILES_DIR}/{session_id}.csv"
     with open(file_location, "wb") as f:
         f.write(await file.read())
-    if not isinstance(file, UploadFile):  #a fallback file
+    if not isinstance(file, UploadFile): 
         await file.close()
     df = process_file(file_location)
+
     sessions[session_id] = {
         "file_location": file_location,
-        "dataframe": df,
-        "filtered_dataframe": df,
-        "expiration": expiration_date
+        "expiration": expiration_date,
+        "panels": {
+            panel_id: {
+                "dataframe": df,
+                "filtered_dataframe": df
+            }
+        }
     }
 
     image_base64, metrics = describe_df(df)
@@ -166,6 +177,7 @@ async def upload(file: UploadFile):
     response.set_cookie(key="session_id", value=session_id)
     return response
 
+#TODO: if this is still needed
 @app.post("/fake_upload")
 async def fake_upload(file: Optional[UploadFile] = File(None)):
     session_id = str(uuid.uuid4())
@@ -176,7 +188,7 @@ async def fake_upload(file: Optional[UploadFile] = File(None)):
     file_location = f"{FILES_DIR}/{session_id}.csv"
     with open(file_location, "wb") as f:
         f.write(await file.read())
-    if not isinstance(file, UploadFile):  #a fallback file
+    if not isinstance(file, UploadFile):
         await file.close()
     df = process_file(file_location)
     sessions[session_id] = {
@@ -225,152 +237,195 @@ async def check_session(request: Request, call_next):
 async def test():
     raise HTTPException(status_code=401, detail="Session expired")
 
+@app.post("/add_panel")
+async def add_panel(panel_id: str = Query(...), session_id: str = Depends(get_session_id)):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_data = sessions.get(session_id)
+    if not session_data or "panels" not in session_data:
+        raise HTTPException(status_code=400, detail="Session data is incomplete")
+
+    # Get the first panel_id in the session
+    first_panel_id = next(iter(session_data["panels"]), None)
+    if not first_panel_id:
+        raise HTTPException(status_code=400, detail="No panels found in the session")
+
+    # Copy the dataframe and filtered_dataframe from the first panel
+    first_panel_data = session_data["panels"][first_panel_id]
+    if "dataframe" not in first_panel_data or "filtered_dataframe" not in first_panel_data:
+        raise HTTPException(status_code=400, detail="First panel data is incomplete")
+
+    # Add the new panel with the same data
+    session_data["panels"][panel_id] = {
+        "dataframe": first_panel_data["dataframe"],
+        "filtered_dataframe": first_panel_data["dataframe"]
+    }
+
+    return {"message": f"Panel '{panel_id}' added successfully"}
+
+@app.delete("/remove_panel")
+async def remove_panel(panel_id: str = Query(...), session_id: str = Depends(get_session_id)):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_data = sessions.get(session_id)
+    if not session_data or "panels" not in session_data:
+        raise HTTPException(status_code=400, detail="Session data is incomplete")
+
+    if panel_id not in session_data["panels"]:
+        raise HTTPException(status_code=404, detail=f"Panel '{panel_id}' not found in the session")
+
+    del session_data["panels"][panel_id]
+
+    return {"message": f"Panel '{panel_id}' removed successfully"}
+
 @app.post("/filter_analysis")
 async def receive_filter_analysis(analysis_filter_model: AnalysisFilterModel, session_id: str = Depends(get_session_id)):
-    df_full = get_dataframe_from_session(session_id, sessions, "dataframe")
-    #df_prev_filtered = get_dataframe_from_session(session_id, sessions, "filtered_dataframe")
-    print(f"Received information: {analysis_filter_model}")
+    
+    # extract panel_id from request body and remove it from the model for filtering
+    panel_id = analysis_filter_model.panel_id  
+    analysis_filter_model_dict = analysis_filter_model.model_dump()
+    analysis_filter_model_dict.pop("panel_id", None)
 
-    original_columns = df_full.columns  # Store original names before modification
-    print(f"Original columns: {original_columns}")
+    df_full = get_dataframe_from_session(session_id, sessions, panel_id, "dataframe")
+    
+    original_columns = df_full.columns
     df_full.columns = [col.lower() for col in df_full.columns]
 
-    # Normalize keys to lowercase and remove None values
-    filter_dict = {k.lower(): v for k, v in analysis_filter_model.model_dump().items() if v != ''}
+    # convert model to dict and clean up empty lists
+    filter_dict = {k.lower(): v for k, v in analysis_filter_model_dict.items() if v}
 
-    filter_dict.pop("Metric", None)
-    print(f"Filter: {filter_dict}")
+    filter_dict.pop("metric", None)
 
-    if filter_dict:
-        df_filtered = df_full
-        print("with filter values", filter_dict)
-        for key, value in filter_dict.items():
-            if key in df_filtered.columns:
-                df_filtered = df_filtered[df_filtered[key] == value]
-    else:
-        df_filtered = df_full
+    df_filtered = df_full
+
+    for key, values in filter_dict.items():
+        if key in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered[key].isin(values)]
 
     if df_filtered.empty:
-        print("Warning: DataFrame is empty after filtering!")
+        print(f"Warning: DataFrame is empty after filtering for panel {panel_id}!")
 
+    # restore original column names
     df_full.columns = original_columns
     df_filtered.columns = original_columns
 
-    set_dataframe_session(session_id, df_filtered, "filtered_dataframe")
+    set_dataframe_session(session_id, df_filtered, "filtered_dataframe", panel_id)
 
-    return {"filtered_data": df_filtered.to_dict(orient="records")}
-
+    return {"filtered_data": df_filtered.to_dict(orient="records")} 
 
 @app.get("/infoPanel")
 async def readInfoPanelFile(session_id: str = Depends(get_session_id)):
-    file_path = "data/InfoPanel.json"  # Ensure this file exists in your server directory
+    file_path = "data/InfoPanel.json" 
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type="application/json", filename="data.json")
     return {"error": "File not found"}
 
-@app.get("/filterValues")
-async def filter_values(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+@app.get("/filter_values")
+async def filter_values(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return filter_values_from_df(df)
 
 @app.get("/units")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return units_per_role(df)
 
 @app.get("/duration_per_role")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return role_average_duration(df)
 
 
 @app.get("/duration_per_resource")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return resource_average_duration(df)
 
 @app.get("/resource_within_role_norm")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return resource_within_role_normalization(df)
 
 @app.get("/resource_roles")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
+    print(f"Received information for panel {panel_id}: {panel_id}")
     return resource_roles(df)
 
 @app.get("/resource_role_duration")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return resource_role_average_duration(df)
 
 @app.get("/roles_per_activity")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return roles_per_activity(df)
 
 @app.get("/resources_per_activity")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return resources_per_activity(df)
 
 @app.get("/activities_per_role")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return activities_per_role_new(df)
 
 @app.get("/activity_average_duration")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return activity_average_duration_with_roles(df)
 
 @app.get("/activity_resource_comparison")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return activity_resource_comparison(df)
 
 @app.get("/activity_resource_comparison_norm")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return activity_resource_comparison(df, normalize=True)
 
 @app.get("/slowest_resource")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return slowest_resource_per_activity(df)
 
 @app.get("/capacity_utilization_resource")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return capacity_utilization_resource_new(df)
 
 @app.get("/capacity_utilization_role")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return capacity_utilization_role_new(df)
 
 @app.get("/capacity_utilization_activity")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return capacity_utilization_activity_new(df)
 
 @app.get("/duration_per_activity")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return activity_case_duration(df)
 
 @app.get("/resource_time_distribution")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return total_duration_per_resource_and_activity(df)
 
 @app.get("/role_time_distribution")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return total_duration_per_role_and_activity(df)
 
 @app.get("/resource_role_time_distribution")
-async def read_units(session_id: str = Depends(get_session_id)):
-    df = get_dataframe_from_session(session_id, sessions)
+async def read_units(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
     return workload_distribution_per_resource(df)
 

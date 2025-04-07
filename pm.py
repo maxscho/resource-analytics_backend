@@ -25,10 +25,11 @@ class OutputModel(BaseModel):
     process_model: str | None = None
 
 class AnalysisFilterModel(BaseModel):
-    metric: str
-    resource: str
-    role: str
-    activity: str
+    metric: list[str]
+    resource: list[str]
+    role: list[str]
+    activity: list[str]
+    panel_id: str
 
 pd.set_option('display.max_columns', None)
 
@@ -37,7 +38,7 @@ def plt_to_image(plt):
     buf = BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)
-    return  base64.b64encode(buf.read()).decode('utf-8')
+    return base64.b64encode(buf.read()).decode('utf-8')
 
 
 #TODO add figsize as global var or as parameter
