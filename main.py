@@ -1,20 +1,25 @@
+import random
 from fastapi import FastAPI, Query, Path, Body, Request, HTTPException, UploadFile, File, Cookie, Depends
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Optional, Union
+import pm4py
 from pydantic import BaseModel
 from enum import Enum
 import aiofiles
 
 import pandas as pd
-import pm4py
 import pydotplus
 from datetime import datetime, timedelta
 import uuid, os
 import base64
+import json
 
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+
+from pm4py.algo.discovery.dfg import algorithm as dfg_discovery
+from pm4py.visualization.dfg import visualizer as dfg_visualization
 
 pd.set_option('display.max_columns', None)
 SESSION_DURATION = timedelta(hours=2)
@@ -45,6 +50,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 from pm import (
     base64,
+    calculate_node_measures,
     units_per_role,
     role_average_duration,
     resource_average_duration,
@@ -121,30 +127,71 @@ def process_file(file_location: str):
 
 def describe_df(df):
     dff = df.drop(columns=["Duration"], inplace=False)
-    dff = pm4py.format_dataframe(dff, case_id="Case ID", activity_key="Activity", timestamp_key="Complete Timestamp")
+    dff = pm4py.format_dataframe(
+        dff,
+        case_id="Case ID",
+        activity_key="Activity",
+        timestamp_key="Complete Timestamp"
+    )
     event_log = pm4py.convert_to_event_log(dff)
-    #heu_net = pm4py.discover_heuristics_net(event_log, dependency_threshold=0.99)
-    heu_net = pm4py.discover_heuristics_net(dff, dependency_threshold=0.99, case_id_key='Case ID', activity_key='Activity', timestamp_key='Complete Timestamp')
+
+    heu_net = pm4py.discover_heuristics_net(
+        dff,
+        dependency_threshold=0.99,
+        case_id_key='Case ID',
+        activity_key='Activity',
+        timestamp_key='Complete Timestamp'
+    )
+
     graph = pm4py.visualization.heuristics_net.visualizer.get_graph(heu_net)
     png_image = graph.create_png()
     image_base64 = base64.b64encode(png_image).decode('utf-8')
+
     stats = pm4py.statistics.traces.generic.log.case_statistics.get_cases_description(event_log)
     starts = [case['startTime'] for case in stats.values()]
     ends = [case['endTime'] for case in stats.values()]
     min_start = datetime.utcfromtimestamp(int(min(starts))).strftime("%d %b %Y")
     max_end = datetime.utcfromtimestamp(int(max(ends))).strftime("%d %b %Y")
     metrics = [
-        {"Metric":"Cases", "Value":len(event_log)},
-        {"Metric":"Events", "Value":sum(len(case) for case in event_log)},
-        {"Metric":"Timeframe", "Value":f"{min_start} - {max_end}"}
+        {"Metric": "Cases", "Value": len(event_log)},
+        {"Metric": "Events", "Value": sum(len(case) for case in event_log)},
+        {"Metric": "Timeframe", "Value": f"{min_start} - {max_end}"}
     ]
-    return (image_base64, metrics)
+
+    nodes = []
+    #activity_counts = {activity: len([event for event in event_log if event["concept:name"] == activity]) for activity in heu_net.activities}
+
+    for activity in heu_net.activities:
+        nodes.append({
+            "id": activity,
+            #"data": {"label": f"{activity} ({activity_counts.get(activity, 0)})"},
+            "data": {"label": f"{activity}"},
+            "position": {
+                "x": random.randint(100, 800),  # Replace with layout logic if needed
+                "y": random.randint(100, 600)
+            }
+        })
+
+    edges = []
+    if hasattr(heu_net, 'dfg') and isinstance(heu_net.dfg, dict):
+        for (source, target), count in heu_net.dfg.items():
+            edges.append({
+                "id": f"{source}-{target}",
+                "source": source,
+                "target": target,
+                "label": str(count)  # Frequency of the edge
+            })
+    else:
+        print("Warning: 'dfg' attribute not found or is not a dictionary in HeuristicsNet object.")
+
+    return (image_base64, metrics, nodes, edges)
 
 @app.post("/upload")
 async def upload(file: UploadFile, panel_id: str = Query(...)):
     session_id = str(uuid.uuid4())
     expiration_date = datetime.now() + SESSION_DURATION
 
+    # Handle file upload
     if not file:
         file = await aiofiles.open(TEST_FILE, mode='rb')
 
@@ -155,6 +202,7 @@ async def upload(file: UploadFile, panel_id: str = Query(...)):
         await file.close()
     df = process_file(file_location)
 
+    # Store session data
     sessions[session_id] = {
         "file_location": file_location,
         "expiration": expiration_date,
@@ -166,16 +214,25 @@ async def upload(file: UploadFile, panel_id: str = Query(...)):
         }
     }
 
-    image_base64, metrics = describe_df(df)
-    response = JSONResponse(content={
-        "image":image_base64,
-        "table":metrics,
-        "renderAnalysis":True,
-        "activity": df["Activity"].unique().tolist(),
-        "resource": df["Resource"].unique().tolist(),
-        "role": df["Role"].unique().tolist()})
-    response.set_cookie(key="session_id", value=session_id)
-    return response
+    try:
+        image_base64, metrics, nodes, edges = describe_df(df)
+        
+        response = JSONResponse(content={
+            "image": image_base64,         
+            "table": metrics,              
+            "dfg": {                       
+                "nodes": nodes,            
+                "edges": edges             
+            },
+            "renderAnalysis": True,
+            "activity": df["Activity"].unique().tolist(),
+            "resource": df["Resource"].unique().tolist(),
+            "role": df["Role"].unique().tolist()
+        })
+        response.set_cookie(key="session_id", value=session_id)
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 #TODO: if this is still needed
 @app.post("/fake_upload")
@@ -233,6 +290,18 @@ async def check_session(request: Request, call_next):
         response.delete_cookie(key="session_id")
     return response
 
+@app.post("/node_selection_detail")
+async def node_selection_detail(request_body: dict = Body(...), session_id: str = Depends(get_session_id)):
+    
+    activity = request_body.get("activity")
+    panel_id = request_body.get("panel_id")
+
+    activity = activity.split(" (")[0] if activity else None
+
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
+
+    return calculate_node_measures(df, selected_activity=activity)
+
 @app.get("/test_expire")
 async def test():
     raise HTTPException(status_code=401, detail="Session expired")
@@ -241,6 +310,8 @@ async def test():
 async def add_panel(panel_id: str = Query(...), session_id: str = Depends(get_session_id)):
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    print("Sessions before add", sessions)
 
     session_data = sessions.get(session_id)
     if not session_data or "panels" not in session_data:
@@ -261,6 +332,8 @@ async def add_panel(panel_id: str = Query(...), session_id: str = Depends(get_se
         "dataframe": first_panel_data["dataframe"],
         "filtered_dataframe": first_panel_data["dataframe"]
     }
+
+    print("Sessions after add", sessions)
 
     return {"message": f"Panel '{panel_id}' added successfully"}
 

@@ -4,3 +4,4 @@ files/*
 *.old
 TODO*
 *.swp
+process_analysis.py
