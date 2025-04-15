@@ -25,10 +25,11 @@ class OutputModel(BaseModel):
     process_model: str | None = None
 
 class AnalysisFilterModel(BaseModel):
-    metric: str
-    resource: str
-    role: str
-    activity: str
+    metric: list[str]
+    resource: list[str]
+    role: list[str]
+    activity: list[str]
+    panel_id: str
 
 pd.set_option('display.max_columns', None)
 
@@ -37,7 +38,7 @@ def plt_to_image(plt):
     buf = BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)
-    return  base64.b64encode(buf.read()).decode('utf-8')
+    return base64.b64encode(buf.read()).decode('utf-8')
 
 
 #TODO add figsize as global var or as parameter
@@ -88,6 +89,73 @@ custom_palette_2 = [
     "#75E6CC",
     "#B875E6"
 ]
+
+def calculate_node_measures(df, selected_activity):
+    unique_resources = df[df["Activity"] == selected_activity]["Resource"].nunique()
+    responsible_role = df[df["Activity"] == selected_activity]["Role"].mode()[0]
+
+    # Filter only the selected activity
+    activity_df = df[df["Activity"] == selected_activity].copy()
+
+    # Convert timestamps
+    activity_df["Start Timestamp"] = pd.to_datetime(activity_df["Start Timestamp"])
+    activity_df["Complete Timestamp"] = pd.to_datetime(activity_df["Complete Timestamp"])
+
+    # Calculate durations
+    activity_df["Duration"] = (activity_df["Complete Timestamp"] - activity_df["Start Timestamp"]).dt.total_seconds() / 60  # in minutes
+
+    # Total work time per resource
+    total_work_time = activity_df.groupby("Resource")["Duration"].sum().sum()  # all resources
+
+    # Estimate available time: assume 7.7h/day, over the range of days in the log
+    num_resources = activity_df["Resource"].nunique()
+    date_range = df["Complete Timestamp"].max() - df["Start Timestamp"].min()
+    num_days = date_range.days + 1
+    available_minutes = num_resources * num_days * 7.7 * 60  # 8h per day in minutes
+
+    capacity_utilization = (total_work_time / available_minutes) * 100
+
+    # Total duration per resource per case
+    resource_case_duration = activity_df.groupby(["Resource", "Case ID"])["Duration"].sum().reset_index()
+
+    # Now average per resource
+    acd_per_resource = resource_case_duration.groupby("Resource")["Duration"].mean()
+
+    # Convert the Series to a DataFrame
+    acd_per_resource_df = acd_per_resource.reset_index()
+    acd_per_resource_df.columns = ['Resource', 'Average Case Duration [min]']
+
+    fig = px.bar(acd_per_resource_df, y='Resource', x='Average Case Duration [min]', 
+        title=f'Activity: {selected_activity}',
+        labels={'Average Case Duration [min]': 'Average Case Duration [min]', 'Resource': 'Resource'},
+        color_discrete_sequence=[BLUE])
+    fig.update_layout(
+        plot_bgcolor='white',
+        #width=1200,  # Width in pixels
+        height=400,  # Height in pixels
+        title={
+            'x': 0.5,
+            'xanchor': 'center'
+        }
+    )
+
+    fig.update_traces(
+        hovertemplate='Avg. Case Duration: %{customdata}', 
+        customdata=round(acd_per_resource_df['Average Case Duration [min]'], 2))
+    fig.update_xaxes(tickmode='linear', tick0=0, dtick=round(acd_per_resource_df["Average Case Duration [min]"].max()/5), automargin=True)
+
+    plot = fig.to_json()
+
+    measures = pd.DataFrame([{
+        "Activity": selected_activity,
+        "Unique Resources": unique_resources,
+        "Responsible Role": responsible_role,
+        "Total Work Time (Minutes)": total_work_time,
+        "Capacity Utilization (%)": f"{round(capacity_utilization*100, 2)} %",
+        "Average Case Duration per Resource (Minutes)": round(acd_per_resource.mean(), 2),
+    }])
+
+    return OutputModel(table=measures.to_dict(orient="records"), plot=plot)
 
 def filter_values_from_df(df):
     unique_values = {
@@ -994,7 +1062,11 @@ def total_duration_per_resource(df):
 
     return result_df
 
-def capacity_utilization_resource(df, work_hours_per_day=7.7):
+def capacity_utilization_resource(df, work_hours_per_day=7.7, activity=""):
+
+    if activity != "":
+        df = df[df['Activity'] == activity]
+
     start_date, end_date = get_timeframe(df)
     # get the overall time spent for each resource
     result_df = total_duration_per_resource(df)

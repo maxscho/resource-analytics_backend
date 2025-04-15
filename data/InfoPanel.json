@@ -124,5 +124,11 @@
         "label": "Activity Capacity Utilization",
         "disabled": null,
         "info": "Tracks the utilization rate of activities. Helps identify activities that are underperforming or over-resourced."
+    },
+    {
+        "value": "analysis_detail",
+        "label": "Analysis Details",
+        "disabled": 1.0,
+        "info": "Shows metrics specific for selected node or edge from the process model."
     }
 ]
