@@ -90,6 +90,50 @@ custom_palette_2 = [
     "#B875E6"
 ]
 
+def get_node_hover_details(df):
+    # Create a dictionary to store metrics for each activity
+    activity_hover_details = {}
+    
+    # Get list of all unique activities
+    activities = df["Activity"].unique()
+    
+    for selected_activity in activities:
+        # Filter only the current activity
+        activity_df = df[df["Activity"] == selected_activity].copy()
+        
+        if activity_df.empty:
+            activity_hover_details[selected_activity] = {"error": f"No data found for activity: {selected_activity}"}
+            continue
+        
+        # Count occurrences
+        occurrence_count = len(activity_df)
+        unique_cases = activity_df["Case ID"].nunique()
+        unique_resources = activity_df["Resource"].nunique()
+        
+        # Get most common role
+        responsible_role = activity_df["Role"].mode()[0] if not activity_df["Role"].empty else "Unknown"
+        
+        # Convert timestamps
+        activity_df["Start Timestamp"] = pd.to_datetime(activity_df["Start Timestamp"])
+        activity_df["Complete Timestamp"] = pd.to_datetime(activity_df["Complete Timestamp"])
+        
+        # Calculate durations
+        activity_df["Duration"] = (activity_df["Complete Timestamp"] - activity_df["Start Timestamp"]).dt.total_seconds() / 60  # in minutes
+        
+        # Average case duration
+        avg_duration = activity_df.groupby('Case ID')['Duration'].sum().mean()
+        
+        # Store metrics in dictionary
+        activity_hover_details[selected_activity] = {
+            "case_count": occurrence_count,
+            "unique_cases": unique_cases,
+            "unique_resources": unique_resources,
+            "responsible_role": responsible_role,
+            "average_duration": round(avg_duration, 2),
+        }
+    
+    return activity_hover_details
+
 def calculate_node_measures(df, selected_activity):
     unique_resources = df[df["Activity"] == selected_activity]["Resource"].nunique()
     responsible_role = df[df["Activity"] == selected_activity]["Role"].mode()[0]

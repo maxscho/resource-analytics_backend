@@ -50,6 +50,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 from pm import (
     base64,
+    get_node_hover_details,
     calculate_node_measures,
     units_per_role,
     role_average_duration,
@@ -289,6 +290,14 @@ async def check_session(request: Request, call_next):
     if current_session_id and not session:
         response.delete_cookie(key="session_id")
     return response
+
+@app.post("/node_hover_detail")
+async def node_hover_detail(request_body: dict = Body(...), session_id: str = Depends(get_session_id)):
+    panel_id = request_body.get("panel_id")
+
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
+    
+    return get_node_hover_details(df)
 
 @app.post("/node_selection_detail")
 async def node_selection_detail(request_body: dict = Body(...), session_id: str = Depends(get_session_id)):
