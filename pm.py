@@ -555,7 +555,7 @@ def resource_within_role_normalization(df):
 
     process_model = activity_case_duration(df).process_model
 
-    return OutputModel(table=prettify_df(normalized_df).to_dict(orient="records"), plot=plot, big_plot=big_plot, process_model=process_model)
+    return OutputModel(table=prettify_df(normalized_df).to_dict(orient="records"), plot=big_plot, big_plot=plot, process_model=process_model)
 
 
 def roles_per_activity(df, count: bool = True):
@@ -847,7 +847,7 @@ def activity_resource_comparison(df, normalize: bool = False):
             text=hover_text.values,
             colorscale=color_scale,
             colorbar=dict(
-                title='Average Case Duration (normalized)',
+                title=dict(text='Average Case Duration (normalized)', side='right'),
                 tickvals=[0, 1],
                 ticktext=['Fastest<br>Resource', 'Slowest<br>Resource']),
             showscale=True,
@@ -1487,7 +1487,6 @@ def capacity_utilization_role_new(df):
     process_model = capacity_utilization_activity_new(df).process_model
     return OutputModel(table=prettify_df(result_df).to_dict(orient="records"), plot=plot, process_model=process_model)
 
-
 # Activity capacity
 # Naive
 def total_duration_per_activity(df):
@@ -1731,3 +1730,151 @@ def capacity_utilization_activity_new(df):
     process_model = colorize_net(heu_net, colors)
 
     return OutputModel(table=prettify_df(result_df).replace({np.nan: None}).to_dict(orient="records"), plot=plot, process_model=process_model)
+
+
+def get_color_option_1(df):
+    grouped_activities = df.groupby('Activity')
+
+    unique_activities = []
+    average_duration_per_case = []
+
+    for activity, activity_df in grouped_activities:
+
+        case_durations = activity_df.groupby('Case ID')['Duration'].sum()
+
+        average_duration = case_durations.mean()
+
+        unique_activities.append(activity)
+        average_duration_per_case.append(average_duration)
+
+    result_df = pd.DataFrame({
+        "Activity": unique_activities,
+        "Average Case Duration": average_duration_per_case
+    })
+    
+    result_df['Normalized Average Case Duration'] = result_df['Average Case Duration'].apply(
+        lambda x: (x - result_df['Average Case Duration'].min()) / (result_df['Average Case Duration'].max() - result_df['Average Case Duration'].min()))
+
+    colors = get_colors(dict(zip(result_df['Activity'], result_df['Normalized Average Case Duration'])), ctype="sat", base_color="#FFFFFF")
+    return colors
+
+def get_color_option_2(df):
+    # get time spent in each role for every resource
+    total_time_role = df.groupby(['Resource', 'Role'])['Duration'].sum().reset_index()
+
+    total_time_role = total_time_role.rename(columns={'Duration': 'Total Time Worked in Role (hr)'})
+
+    # convert to hours
+    total_time_role['Total Time Worked in Role (hr)'] = (total_time_role['Total Time Worked in Role (hr)'].dt.total_seconds() / 3600).round(2)
+
+    #get the overall time spent for each resource using previously defined function
+    total_time_resource = worked_hours_per_resource(df)
+
+    # Merge dfs
+    result_df = pd.merge(total_time_role, total_time_resource, on='Resource')
+    
+    # calculate relative time
+    result_df['Percentage (%)'] = ((result_df['Total Time Worked in Role (hr)'] / result_df['Total Time Worked (hr)']) * 100).round(2)
+    
+    # drop irrelevant columns
+    result_df.drop(columns=['Total Time Worked', 'Total Time Worked (hr)'], inplace=True)
+    
+    #return result_df
+    workload_distribution_per_resource_plot = result_df.copy()
+    unique_roles = workload_distribution_per_resource_plot['Role'].unique()
+    color_palette = custom_palette_2 #sns.color_palette("husl", len(unique_roles)).as_hex()
+
+    role_color_mapping = {role: color_palette[i] for i, role in enumerate(unique_roles)}
+
+    activity_role_df = pd.DataFrame(activities_per_role(df).table)
+    unique_activities = activity_role_df['Activity'].unique()
+    activity_color_mapping = {activity: split_equal([role_color_mapping[role[1]] for role in activity_role_df.loc[activity_role_df['Activity']==activity, 'Role'].items()]) for activity in unique_activities}
+    
+    return activity_color_mapping
+
+def get_color_option_3(df):
+        # Group by Resource and Activity, sum durations to get the total time spent on each activity by each resource
+    result_df = df.groupby(['Resource', 'Activity'])['Duration'].sum().reset_index()
+
+    # Rename columns for better readability
+    result_df=result_df.rename(columns={'Duration': 'Total Time Spent'})
+
+    # Add a new column for the overall time spent in minutes
+    result_df['Total Time Spent (min)'] = (result_df['Total Time Spent'].dt.total_seconds() / 60).round(2)  # Convert to minutes
+
+    # Calculate the total time spent per resource on all activities
+    total_time_per_resource = result_df.groupby('Resource')['Total Time Spent'].sum().reset_index()
+    total_time_per_resource = total_time_per_resource.rename(columns={'Total Time Spent': 'Overall Time Spent'})
+
+    # Merge the total time spent per resource into the result dataframe
+    result_df = result_df.merge(total_time_per_resource, on='Resource')
+
+    # Calculate the percentage of time spent on each activity
+    result_df['Percentage Time Spent (%)'] = (result_df['Total Time Spent'] / result_df['Overall Time Spent'] * 100).round(2)
+
+    # Drop the 'Overall Time Spent' column to hide it
+    result_df = result_df.drop(columns=['Overall Time Spent'])
+
+    #return result_df
+    resource_time_distribution_plot = result_df.copy()
+    unique_activities = resource_time_distribution_plot['Activity'].unique()
+    color_palette = custom_palette_1 #sns.color_palette("husl", len(unique_activities)).as_hex()
+
+    # dictionary for dfg color coding
+    activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
+
+    return activity_color_mapping
+
+def get_color_option_4(df):
+        # Group by Role and Activity, sum durations to get the total time spent on each activity by each role
+    result_df = df.groupby(['Role', 'Activity'])['Duration'].sum().reset_index()
+
+    # Rename columns for better readability
+    result_df = result_df.rename(columns={'Duration': 'Total Time Spent'})
+
+    # Add a new column for the overall time spent in minutes
+    result_df['Total Time Spent (min)'] = (result_df['Total Time Spent'].dt.total_seconds() / 60).round(2)  # Convert to minutes
+
+    # Calculate the total time spent per resource on all activities
+    total_time_per_role = result_df.groupby('Role')['Total Time Spent'].sum().reset_index()
+    total_time_per_role = total_time_per_role.rename(columns={'Total Time Spent': 'Overall Time Spent'})
+
+    # Merge the total time spent per resource into the result dataframe
+    result_df = result_df.merge(total_time_per_role, on='Role')
+
+    # Calculate the percentage of time spent on each activity
+    result_df['Percentage Time Spent (%)'] = (result_df['Total Time Spent'] / result_df['Overall Time Spent'] * 100).round(2)
+
+    # Drop the 'Overall Time Spent' column to hide it
+    result_df = result_df.drop(columns=['Overall Time Spent'])
+
+    #return result_df
+    role_time_distribution_plot = result_df.copy()
+    unique_activities = role_time_distribution_plot['Activity'].unique()
+    color_palette = custom_palette_1 #sns.color_palette("husl", len(unique_activities)).as_hex()
+
+    # dictionary for dfg color coding
+    activity_color_mapping = {activity: color_palette[i] for i, activity in enumerate(unique_activities)}
+    
+    return activity_color_mapping
+
+def get_color_option_5(df):
+    activity_duration = df.groupby('Activity')['Duration'].sum().reset_index()
+
+    activity_duration['Duration'] = (activity_duration['Duration'].dt.total_seconds() / 3600).round(2)
+
+    activity_duration = activity_duration.rename(columns={'Duration': 'Total Time Spent (hr)'})
+
+    activity_capacity = capacity_resource_activity(df).groupby('Activity')['Total Available Working Hours for this Activity'].sum().reset_index()
+
+    result_df = pd.merge(activity_duration, activity_capacity, on='Activity', how='inner')
+
+    # Calculate the capacity utilization for each activity
+    result_df['Capacity Utilization (%)'] = (result_df['Total Time Spent (hr)'] / result_df['Total Available Working Hours for this Activity'] * 100).round(2)
+
+    result_df['Capacity Utilization (%)'] = (
+    result_df['Total Time Spent (hr)'] / result_df['Total Available Working Hours for this Activity'] * 100).replace([np.inf, -np.inf], np.nan).round(2)
+
+    result_df['Capacity Utilization (%)'] = result_df['Capacity Utilization (%)'].fillna(0)  # or another default
+
+    return dict(zip(result_df['Activity'], result_df['Capacity Utilization (%)']))
