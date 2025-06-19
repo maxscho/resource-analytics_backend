@@ -21,6 +21,8 @@ from starlette.responses import RedirectResponse
 from pm4py.algo.discovery.dfg import algorithm as dfg_discovery
 from pm4py.visualization.dfg import visualizer as dfg_visualization
 
+from colorize import get_colors
+
 pd.set_option('display.max_columns', None)
 SESSION_DURATION = timedelta(hours=2)
 FILES_DIR = "files"
@@ -77,7 +79,13 @@ from pm import (
     capacity_utilization_activity_new,
     activities_per_role_new,
     info_panel_file,
-    filter_values_from_df, AnalysisFilterModel
+    filter_values_from_df, 
+    AnalysisFilterModel,
+    get_color_option_1,
+    get_color_option_2,
+    get_color_option_3,
+    get_color_option_4,
+    get_color_option_5
 )
 
 def get_dataframe_from_session(session_id: str, session_dict: dict, panel_id: str, df_type: str = "filtered_dataframe"):
@@ -257,7 +265,7 @@ async def fake_upload(file: Optional[UploadFile] = File(None)):
     }
     image_base64, metrics = describe_df(df)
     response = JSONResponse(content={"image":image_base64, "table":metrics})
-    response.set_cookie(key="session_id", value=session_id)
+    response.set_cookie(key="session_id", value=session_id, httponly=True, samesite="lax", secure=False)
     return response
 
 
@@ -290,6 +298,35 @@ async def check_session(request: Request, call_next):
     if current_session_id and not session:
         response.delete_cookie(key="session_id")
     return response
+
+@app.get("/dfg_color_scheme")
+async def dfg_color_scheme(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
+    colors_option_1 = get_color_option_1(df)
+    colors_option_2 = get_color_option_2(df)
+    colors_option_3 = get_color_option_3(df)
+    colors_option_4 = get_color_option_4(df)
+
+    colors = {
+        "duration_per_role": colors_option_1,
+        "resource_within_role_norm": colors_option_1,
+        "duration_per_activity": colors_option_1,
+        "activity_average_duration": colors_option_1,
+        "resource_role_time_distribution": colors_option_2,
+        "resource_time_distribution": colors_option_3,
+        "role_time_distribution": colors_option_4
+    }
+
+    return {"colors": colors}
+
+@app.get("/dfg_node_utilization")
+async def dfg_node_utilization(session_id: str = Depends(get_session_id), panel_id: str = Query(...)):
+
+    df = get_dataframe_from_session(session_id, sessions, panel_id=panel_id)
+    colors_option_5 = get_color_option_5(df)
+
+    return {"utilization": colors_option_5}
 
 @app.post("/node_hover_detail")
 async def node_hover_detail(request_body: dict = Body(...), session_id: str = Depends(get_session_id)):
