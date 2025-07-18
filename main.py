@@ -48,7 +48,6 @@ async def get_session_id(session_id: str = Cookie(None)):
     #return "fixed"
 
 sessions = {}
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 from pm import (
     base64,
@@ -119,20 +118,26 @@ def set_dataframe_session(session_id: str, df: pd.DataFrame, df_type: str, panel
 
     session_data["panels"][panel_id][df_type] = df
 
-
-@app.get("/")
-async def get_index():
-    return FileResponse("static/index.html")
-
 def process_file(file_location: str):
-    df = pd.read_csv(file_location)
-    # Convert "Start Time" and "Complete Time" columns to datatype: datetime
-    df["Start Timestamp"] = pd.to_datetime(df["Start Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
-    df["Complete Timestamp"] = pd.to_datetime(df["Complete Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
-    # Calculate the time difference and create a new column
-    df["Duration"] = df["Complete Timestamp"] - df["Start Timestamp"]
-    df['Case ID'] = df['Case ID'].astype(str)
-    return df
+
+    file_extension = os.path.splitext(file_location)[1].lower()
+
+    if file_extension == ".csv":
+        df = pd.read_csv(file_location)
+    elif file_extension == ".xes":
+        log = pm4py.read_xes(file_location)
+        df = pm4py.convert_to_dataframe(log)
+
+    if file_extension in [".csv", ".xes"]:
+        # Convert "Start Time" and "Complete Time" columns to datatype: datetime
+        df["Start Timestamp"] = pd.to_datetime(df["Start Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
+        df["Complete Timestamp"] = pd.to_datetime(df["Complete Timestamp"], format="%Y/%m/%d %H:%M:%S.%f")
+        # Calculate the time difference and create a new column
+        df["Duration"] = df["Complete Timestamp"] - df["Start Timestamp"]
+        df['Case ID'] = df['Case ID'].astype(str)
+        return df
+    else:
+        return pd.DataFrame()
 
 def describe_df(df):
     dff = df.drop(columns=["Duration"], inplace=False)
